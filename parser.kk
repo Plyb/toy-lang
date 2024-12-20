@@ -199,17 +199,12 @@ fun p_operator(): <ast<token_with_pos>> exp_with_pos {
   }
 }
 
-type applier {
-  ApplierNil
-  ApplierCons(operand: exp_with_pos, end: pos, tail: applier)
-}
-
-fun p_try_app(operator: exp_with_pos): <ast<token_with_pos>> exp_with_pos {
+fun p_app_or_operator(operator: exp_with_pos): <ast<token_with_pos>> exp_with_pos {
   val maybe_application = pmaybe("applier", fn() {
     p_open_paren()
     val operand = p_exp()
     val end = p_close_paren().end
-    p_try_app(Exp_With_Pos(AppE(operator, operand), operator.start, end))
+    p_app_or_operator(Exp_With_Pos(AppE(operator, operand), operator.start, end))
   })
 
   match maybe_application {
@@ -221,7 +216,7 @@ fun p_try_app(operator: exp_with_pos): <ast<token_with_pos>> exp_with_pos {
 fun p_exp(): <ast<token_with_pos>> exp_with_pos {
   val operator = p_operator()
 
-  p_try_app(operator)
+  p_app_or_operator(operator)
 }
 
 fun p_program(): <ast<token_with_pos>> exp_with_pos {
