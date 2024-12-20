@@ -175,5 +175,7 @@ fun main()
         Exp_With_Pos(IdE("x"), Pos(0,20), Pos(0,21))), Pos(0,14), Pos(0,22)))))
     "def recur(x): recur(x)".tokenize.parse_exp.exp
   check(IntV(42))
-    "{ def g(x): f(x). def f(x): x. g(42) }".run  
+    "{ def g(x): f(x). def f(x): x. g(42) }".run
+  check(IntV(42))
+    "(fn(x): fn(y): x)(42)(0)".run
   

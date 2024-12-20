@@ -144,13 +144,6 @@ fun p_fn(): <ast<token_with_pos>> exp_with_pos {
   Exp_With_Pos(FnE(param, body), start, body.end)
 }
 
-fun p_applier(): <ast<token_with_pos>> (exp_with_pos, pos) {
-  p_open_paren()
-  val operand = p_exp()
-  val end = p_close_paren().end
-  (operand, end)
-}
-
 fun p_parenthesized(): <ast<token_with_pos>> exp_with_pos {
   val start = p_open_paren().start
   val inner = p_exp().exp
@@ -186,7 +179,7 @@ fun p_def(): <ast<token_with_pos>> exp_with_pos {
   )
 }
 
-fun p_atom(): <ast<token_with_pos>> exp_with_pos {
+fun p_operator(): <ast<token_with_pos>> exp_with_pos {
   // by doing a peek first, we can get better error messages
   val first_token_with_pos = match ppeek() {
     Just(tok) -> tok
@@ -206,13 +199,29 @@ fun p_atom(): <ast<token_with_pos>> exp_with_pos {
   }
 }
 
-fun p_exp(): <ast<token_with_pos>> exp_with_pos {
-  val atom = p_atom()
+type applier {
+  ApplierNil
+  ApplierCons(operand: exp_with_pos, end: pos, tail: applier)
+}
 
-  match pmaybe("application", p_applier) {
-    Just((operand, end)) -> Exp_With_Pos(AppE(atom, operand), atom.start, end)
-    Nothing -> atom
+fun p_try_app(operator: exp_with_pos): <ast<token_with_pos>> exp_with_pos {
+  val maybe_application = pmaybe("applier", fn() {
+    p_open_paren()
+    val operand = p_exp()
+    val end = p_close_paren().end
+    p_try_app(Exp_With_Pos(AppE(operator, operand), operator.start, end))
+  })
+
+  match maybe_application {
+    Just(application) -> application
+    Nothing -> operator
   }
+}
+
+fun p_exp(): <ast<token_with_pos>> exp_with_pos {
+  val operator = p_operator()
+
+  p_try_app(operator)
 }
 
 fun p_program(): <ast<token_with_pos>> exp_with_pos {
