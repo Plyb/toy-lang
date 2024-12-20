@@ -19,6 +19,7 @@ value type token {
   CloseParenToken
   ColonToken
   EqToken
+  ListSeparatorToken
 }
 
 fun token/(==)(a: token, b: token): bool {
@@ -32,6 +33,7 @@ fun token/(==)(a: token, b: token): bool {
     (CloseParenToken, CloseParenToken) -> True
     (ColonToken, ColonToken) -> True
     (EqToken, EqToken) -> True
+    (ListSeparatorToken, ListSeparatorToken) -> True
     _ -> False
   }
 }
@@ -47,6 +49,7 @@ fun token/show(tok: token): string {
     CloseParenToken -> "CloseParenToken"
     ColonToken -> "ColonToken"
     EqToken -> "EqToken"
+    ListSeparatorToken -> "ListSeparatorToken"
   }
 }
 
@@ -117,6 +120,11 @@ fun p_colon_token(): <parse> token {
   ColonToken
 }
 
+fun p_list_separator_token(): <parse> token {
+  char(',')
+  ListSeparatorToken
+}
+
 fun p_token(): <parse, get_pos> token_with_pos {
   val start = get_pos()
   val res = TokenWithPos(
@@ -130,6 +138,7 @@ fun p_token(): <parse, get_pos> token_with_pos {
       p_close_paren_token,
       p_def_symbol_token,
       p_colon_token,
+      p_list_separator_token
     ]), start, get_pos())
   many(whitespace)
   res

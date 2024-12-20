@@ -7,16 +7,16 @@ import non-empty-list
 type exp {
   IntE(n: int)
   BlockE(exps: non-empty-list<exp_with_pos>)
-  FnE(param: string, body: exp_with_pos)
+  FnE(params: list<string>, body: exp_with_pos)
   IdE(name: string)
-  AppE(operator: exp_with_pos, operand: exp_with_pos)
+  AppE(operator: exp_with_pos, operands: list<exp_with_pos>)
   ValE(name: string, right_hand_side: exp_with_pos)
   DefE(def: recursive_def)
 }
 
 struct recursive_def {
   name: string
-  param: string
+  params: list<string>
   body: exp_with_pos
 }
 
@@ -24,18 +24,19 @@ fun exp/(==)(a: exp, b: exp): div bool {
   match (a, b) {
     (IntE(a_num), IntE(b_num)) -> a_num == b_num
     (BlockE(a_exps), BlockE(b_exps)) -> a_exps == b_exps
-    (FnE(a_param, a_body), FnE(b_param, b_body)) -> a_param == b_param && a_body == b_body
+    (FnE(a_params, a_body), FnE(b_params, b_body)) -> a_params == b_params && a_body == b_body
     (IdE(a_name), IdE(b_name)) -> a_name == b_name
-    (AppE(a_operator, a_operand), AppE(b_operator, b_operand)) ->
+    (AppE(a_operator, a_operands), AppE(b_operator, b_operands)) ->
       a_operator == b_operator
-      && a_operand == b_operand
+      && list/(==)(a_operands, b_operands,
+        ?(==) = fn(a_operand, b_operand) pretend-no-div(fn() a_operand == b_operand))
     (ValE(a_name, a_right_hand_side), ValE(b_name, b_right_hand_side)) ->
       a_name == b_name
       && a_right_hand_side == b_right_hand_side
-    (DefE(Recursive_def(a_name, a_param, a_body)),
-        DefE(Recursive_def(b_name, b_param, b_body))) ->
+    (DefE(Recursive_def(a_name, a_params, a_body)),
+        DefE(Recursive_def(b_name, b_params, b_body))) ->
       a_name == b_name
-      && a_param == b_param
+      && a_params == b_params
       && a_body == b_body
     _ -> False
   }
@@ -45,11 +46,11 @@ fun exp/show(exp: exp): div string {
   match exp {
     IntE(n) -> "IntE(" ++ n.show ++ ")"
     BlockE(exps) -> "BlockE(" ++ exps.non-empty-list/show(?show = fn(sub_exp) pretend-no-div(fn() sub_exp.show)) ++ ")"
-    FnE(param, body) -> "FnE(" ++ param ++ ", " ++ body.show ++ ")"
+    FnE(params, body) -> "FnE(" ++ params.show ++ ", " ++ body.show ++ ")"
     IdE(name) -> "IdE(" ++ name ++ ")"
-    AppE(operator, operand) -> "AppE(" ++ operator.show ++ ", " ++ operand.show ++ ")"
+    AppE(operator, operands) -> "AppE(" ++ operator.show ++ ", " ++ operands.show ++ ")"
     ValE(name, right_hand_side) -> "ValE(" ++ name ++ ", " ++ right_hand_side.show ++ ")"
-    DefE(Recursive_def(name, param, body)) -> "DefE(" ++ name ++ ", " ++ param ++ ", " ++ body.show ++ ")"  
+    DefE(Recursive_def(name, params, body)) -> "DefE(" ++ name ++ ", " ++ params.show ++ ", " ++ body.show ++ ")"  
   }
 }
 
@@ -115,6 +116,11 @@ fun p_fn_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("fn")
 fun p_eq_token(): ast<token_with_pos> token_with_pos -> p_eq(EqToken)
 fun p_val_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("val")
 fun p_def_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("def")
+fun p_list_separator(): ast<token_with_pos> token_with_pos -> p_eq(ListSeparatorToken)
+
+fun p_param_list(): ast<token_with_pos> list<string> {
+  p-sep-by("parameter list", fn() p_word().fst, p_list_separator)
+}
 
 fun p_int(): <ast<token_with_pos>> exp_with_pos ->
   ptoken("int", fn(tok) {
@@ -137,11 +143,11 @@ fun p_block(): <ast<token_with_pos>> exp_with_pos {
 fun p_fn(): <ast<token_with_pos>> exp_with_pos {
   val start = p_fn_keyword().start
   p_open_paren()
-  val (param, _, _) = p_word()
+  val params = p_param_list()
   p_close_paren()
   p_colon()
   val body = p_exp()
-  Exp_With_Pos(FnE(param, body), start, body.end)
+  Exp_With_Pos(FnE(params, body), start, body.end)
 }
 
 fun p_parenthesized(): <ast<token_with_pos>> exp_with_pos {
@@ -168,12 +174,12 @@ fun p_def(): <ast<token_with_pos>> exp_with_pos {
   val start = p_def_keyword().start
   val (name, _, _) = p_word()
   p_open_paren()
-  val (param, _, _) = p_word()
+  val params = p_param_list()
   p_close_paren()
   p_colon()
   val body = p_exp()
   Exp_With_Pos(
-    DefE(Recursive_def(name, param, body)),
+    DefE(Recursive_def(name, params, body)),
     start,
     body.end
   )
@@ -199,12 +205,16 @@ fun p_operator(): <ast<token_with_pos>> exp_with_pos {
   }
 }
 
+fun p_arg_list(): <ast<token_with_pos>> list<exp_with_pos> {
+  p-sep-by("argument list", p_exp, p_list_separator)
+}
+
 fun p_app_or_operator(operator: exp_with_pos): <ast<token_with_pos>> exp_with_pos {
   val maybe_application = pmaybe("applier", fn() {
     p_open_paren()
-    val operand = p_exp()
+    val operands = p_arg_list()
     val end = p_close_paren().end
-    p_app_or_operator(Exp_With_Pos(AppE(operator, operand), operator.start, end))
+    p_app_or_operator(Exp_With_Pos(AppE(operator, operands), operator.start, end))
   })
 
   match maybe_application {
