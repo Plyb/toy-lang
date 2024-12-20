@@ -199,4 +199,18 @@ fun main()
     "(fn(x): fn(): x)(42)()".run
   check(IntV(1))
     "(fn(x, y): x)(1, 2)".run
+  check(IntV(42))
+    r"{
+      def true(x, y): x.
+      def false(x, y): y.
+      def if(cond, then, else): cond(then(), else()).
+
+      val whatWeWant = 42.
+      val dontReturnThis = 0.
+
+      if(true,
+        fn(): whatWeWant,
+        fn(): dontReturnThis
+      )
+    }".run
   
