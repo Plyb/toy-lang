@@ -5,6 +5,7 @@ import std/data/hashmap
 import non-empty-list
 import std/data/hash
 import std/text/parse
+import typecheck
 
 fun check(expected: a, f: () -> <console,pure|e> a, ?(==): (a, a) -> div bool, ?kk-file-line: string, ?show: a -> div string): <console,div|e> ()
   println("Checking (" ++ kk-file-line ++ ") ...")
@@ -145,7 +146,9 @@ fun interp(exp_with_pos: exp_with_pos, env: env): pure toy-value {
 }
 
 fun run(prog: string): <pure,console> toy-value {
-  prog.tokenize.parse_exp.interp(thread/hash-map())
+  val exp = prog.tokenize.parse_exp
+  exp.typecheck(thread/hash-map())
+  exp.interp(thread/hash-map())
 }
 
 fun main()
@@ -203,7 +206,7 @@ fun main()
     r"{
       def true(x: int, y: int): int x.
       def false(x: int, y: int): int y.
-      def if(cond: (int, int) -> int, then: int, else: int): int cond(then(), else()).
+      def if(cond: (int, int) -> int, then: () -> int, else:  () -> int): int cond(then(), else()).
 
       val whatWeWant: int = 42.
       val dontReturnThis: int = 0.
