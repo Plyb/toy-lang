@@ -59,12 +59,12 @@ fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>) {
 
   exps_with_poses.foldl(env, fn(acc_env, block_exp) {
     match block_exp.exp {
-      ValE(name, right_hand_side) -> {
+      ValE(Declaration(name, _), right_hand_side) -> {
         val rhs_value = right_hand_side.interp(acc_env)
         acc_env.insert(name, rhs_value)
       }
-      DefE(Recursive_def(name, params, body)) ->
-        acc_env.insert(name, RecV(params, body, acc_env, rec_defs))
+      DefE(Recursive_def(name, params, _, body)) ->
+        acc_env.insert(name, RecV(params.map(declaration/name), body, acc_env, rec_defs))
       _ -> {
         block_exp.interp(acc_env) // run for possible effect
         acc_env
@@ -74,7 +74,7 @@ fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>) {
 }
 
 fun inflate(rec_def: recursive_def, env: env, recs: list<recursive_def>) {
-  RecV(rec_def.params, rec_def.body, env, recs)
+  RecV(rec_def.params.map(name), rec_def.body, env, recs)
 }
 
 fun insert_all_if_absent(env: env, entries: list<(string, toy-value)>) {
@@ -106,7 +106,7 @@ fun interp(exp_with_pos: exp_with_pos, env: env): pure toy-value {
       val extended_env = env.add_block_statements(exps.all_but_last)
       exps.last.interp(extended_env)
     }
-    FnE(params, body) -> CloV(params, body, env)
+    FnE(params, body) -> CloV(params.map(name), body, env)
     IdE(name) -> match env.get(name) {
       Just(value) -> value
       Nothing -> throw("Unbound identifier: " ++ name)
@@ -165,48 +165,48 @@ fun main()
     parse_exp(tokenize("{{1. 2}. 3. 4}")).exp
   // check([WordToken("fn"), OpenParenToken, WordToken("x"), CloseParenToken, ColonToken, IntToken(1)])
   //   tokenize("fn(x): 1")
-  check(FnE(["x"], Exp_With_Pos(IntE(1), Pos(0,7), Pos(0,8))))
-    parse_exp(tokenize("fn(x): 1")).exp
-  check(FnE(["x"], Exp_With_Pos(BlockE(
-      NECons(Exp_With_Pos(IntE(1), Pos(0,9), Pos(0,10)),
-      NELast(Exp_With_Pos(IntE(2), Pos(0,12), Pos(0,13))))), Pos(0,7), Pos(0,15))))
-    parse_exp(tokenize("fn(x): { 1. 2 }")).exp
-  check(FnE(["x"], Exp_With_Pos(IdE("x"), Pos(0,7), Pos(0,8))))
-    parse_exp(tokenize("fn(x): x")).exp
+  check(FnE([Declaration("x", IntT)], Exp_With_Pos(IntE(1), Pos(0,12), Pos(0,13))))
+    parse_exp(tokenize("fn(x: int): 1")).exp
+  check(FnE([Declaration("x", IntT)], Exp_With_Pos(BlockE(
+      NECons(Exp_With_Pos(IntE(1), Pos(0,14), Pos(0,15)),
+      NELast(Exp_With_Pos(IntE(2), Pos(0,17), Pos(0,18))))), Pos(0,12), Pos(0,20))))
+    parse_exp(tokenize("fn(x: int): { 1. 2 }")).exp
+  check(FnE([Declaration("x", IntT)], Exp_With_Pos(IdE("x"), Pos(0,12), Pos(0,13))))
+    parse_exp(tokenize("fn(x: int): x")).exp
   check(AppE(
       Exp_With_Pos(IntE(1), Pos(0,0), Pos(0,1)),
       [Exp_With_Pos(IntE(2), Pos(0,2), Pos(0,3))]))
     parse_exp(tokenize("1(2)")).exp
   check(AppE(
-    Exp_With_Pos(FnE(["x"],
-      Exp_With_Pos(IdE("x"), Pos(0,8), Pos(0,9))), Pos(0,0), Pos(0,10)),
-    [Exp_With_Pos(IntE(1), Pos(0,11), Pos(0,12))]))
-    parse_exp(tokenize("(fn(x): x)(1)")).exp
+    Exp_With_Pos(FnE([Declaration("x", IntT)],
+      Exp_With_Pos(IdE("x"), Pos(0,13), Pos(0,14))), Pos(0,0), Pos(0,15)),
+    [Exp_With_Pos(IntE(1), Pos(0,16), Pos(0,17))]))
+    parse_exp(tokenize("(fn(x: int): x)(1)")).exp
   check(IntV(42))
-    "(fn(x): x)(42)".run
+    "(fn(x: int): x)(42)".run
   check(IntV(42))
-    "{ val x = 42. val y = x. y }".run
+    "{ val x: int = 42. val y: int = x. y }".run
   check(IntV(42))
-    "{ val x = (fn(x): x)(42). x }".run
-  check(DefE(Recursive_def("recur", ["x"],
+    "{ val x: int = (fn(x: int): x)(42). x }".run
+  check(DefE(Recursive_def("recur", [Declaration("x", IntT)], IntT,
       Exp_With_Pos(AppE(
-        Exp_With_Pos(IdE("recur"), Pos(0,14), Pos(0,19)),
-        [Exp_With_Pos(IdE("x"), Pos(0,20), Pos(0,21))]), Pos(0,14), Pos(0,22)))))
-    "def recur(x): recur(x)".tokenize.parse_exp.exp
+        Exp_With_Pos(IdE("recur"), Pos(0,23), Pos(0,28)),
+        [Exp_With_Pos(IdE("x"), Pos(0,29), Pos(0,30))]), Pos(0,23), Pos(0,31)))))
+    "def recur(x: int): int recur(x)".tokenize.parse_exp.exp
   check(IntV(42))
-    "{ def g(x): f(x). def f(x): x. g(42) }".run
+    "{ def g(x: int): int f(x). def f(x: int): int x. g(42) }".run
   check(IntV(42))
-    "(fn(x): fn(): x)(42)()".run
+    "(fn(x: int): fn(): x)(42)()".run
   check(IntV(1))
-    "(fn(x, y): x)(1, 2)".run
+    "(fn(x: int, y: int): x)(1, 2)".run
   check(IntV(42))
     r"{
-      def true(x, y): x.
-      def false(x, y): y.
-      def if(cond, then, else): cond(then(), else()).
+      def true(x: int, y: int): int x.
+      def false(x: int, y: int): int y.
+      def if(cond: (int, int) -> int, then: int, else: int): int cond(then(), else()).
 
-      val whatWeWant = 42.
-      val dontReturnThis = 0.
+      val whatWeWant: int = 42.
+      val dontReturnThis: int = 0.
 
       if(true,
         fn(): whatWeWant,
