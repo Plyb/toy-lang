@@ -23,16 +23,12 @@ fun check-exn(expected-err: string, f: () -> <console,exn|e> a, ?kk-file-line: s
 type toy-value {
   IntV(n: int)
   CloV(params: list<string>, body: exp_with_pos, env: env)
-  RecV(params: list<string>, body: exp_with_pos, env: env, recs: list<recursive_def>)
 }
 
 fun toy-value/(==)(a: toy-value, b: toy-value): div bool {
   match (a, b) {
     (IntV(a_n), IntV(b_n)) -> a_n == b_n
     (CloV(a_params, a_body, _), CloV(b_params, b_body, _)) ->
-      a_params == b_params
-      && a_body == b_body
-    (RecV(a_params, a_body, _, _), RecV(b_params, b_body, _, _)) ->
       a_params == b_params
       && a_body == b_body
     _ -> False
@@ -43,13 +39,31 @@ fun toy-value/show(value: toy-value): div string {
   match value {
     IntV(n) -> "IntV(" ++ n.show ++ ")"
     CloV(params, body, _) -> "CloV(" ++ params.show ++ ", " ++ body.show ++ ")"
-    RecV(params, body, _, _) -> "RecV(" ++ params.show ++ ", " ++ body.show ++ ")"
   }
 }
 
-alias env = hash-map<string, toy-value>;
+fun maybe/get_or_throw(maybe: maybe<a>): exn a {
+  match maybe {
+    Just(value) -> value
+    Nothing -> throw("Expected Just, but got Nothing")
+  }
+}
 
-fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>) {
+fun hash-map/get_or_throw(map: hash-map<k, v>, key: k, ?hash: (k, int64) -> int, ?(==): (k, k) -> bool): exn v {
+  map.get(key).get_or_throw()
+}
+
+alias addr = int
+alias env = hash-map<string, addr>
+alias store = hash-map<addr, toy-value>
+
+effect store_update {
+  fun get(addr: addr): maybe<toy-value>
+  fun set(addr: addr, value: toy-value): ()
+  fun fresh_addr(): addr
+}
+
+fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>): <pure, store_update> env {
   val rec_defs = exps_with_poses.flatmap-maybe(fn(exp_with_pos) {
     match exp_with_pos.exp {
       DefE(rec_def) -> Just(rec_def)
@@ -57,46 +71,43 @@ fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>) {
     }
   })
 
-  exps_with_poses.foldl(env, fn(acc_env, block_exp) {
+  val updated_env = exps_with_poses.foldl(env, fn(acc_env, block_exp) {
     match block_exp.exp {
-      ValE(name, right_hand_side) -> {
-        val rhs_value = right_hand_side.interp(acc_env)
-        acc_env.insert(name, rhs_value)
-      }
-      DefE(Recursive_def(name, params, body)) ->
-        acc_env.insert(name, RecV(params, body, acc_env, rec_defs))
+      ValE(name, _) -> acc_env.insert(name, fresh_addr())
+      DefE(Recursive_def(name, _, _)) -> acc_env.insert(name, fresh_addr())
+      _ -> acc_env
+    }
+  })
+
+  // hoist def functions
+  exps_with_poses.foreach(fn(block_exp) {
+    match block_exp.exp {
+      DefE(Recursive_def(name, params, body)) -> set(updated_env.get_or_throw(name), CloV(params, body, updated_env))
+      _ -> ()
+    }
+  })
+
+  // interp other lines
+  exps_with_poses.foreach(fn(block_exp) {
+    match block_exp.exp {
+      ValE(name, rhs) -> set(updated_env.get_or_throw(name), rhs.interp(updated_env))
       _ -> {
-        block_exp.interp(acc_env) // run for possible effect
-        acc_env
+        block_exp.interp(updated_env)
+        ()
       }
     }
   })
+
+  updated_env
 }
 
-fun inflate(rec_def: recursive_def, env: env, recs: list<recursive_def>) {
-  RecV(rec_def.params, rec_def.body, env, recs)
+fun insert_all(env: env, entries: list<(string, toy-value)>): <exn, store_update> env {
+  val updated_env = entries.foldl(env, fn(acc_env, (key, _)) acc_env.insert(key, fresh_addr()))
+  entries.foreach(fn((key, value)) set(updated_env.get_or_throw(key), value))
+  updated_env
 }
 
-fun insert_all_if_absent(env: env, entries: list<(string, toy-value)>) {
-  entries.foldl(env, fn(acc_env, (key, value)) {
-    match acc_env.get(key) {
-      Just(_) -> acc_env
-      Nothing -> acc_env.insert(key, value)
-    }
-  })
-}
-
-fun insert_all(env: env, entries: list<(string, toy-value)>) {
-  entries.foldl(env, fn(acc_env, (key, value)) acc_env.insert(key, value))
-}
-
-fun interp_with_env(env: env) {
-  fn(exp_with_pos: exp_with_pos) {
-    exp_with_pos.interp(env)
-  }
-}
-
-fun interp(exp_with_pos: exp_with_pos, env: env): pure toy-value {
+fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value {
   val exp = exp_with_pos.exp
   val start = exp_with_pos.start
   val end = exp_with_pos.end
@@ -108,7 +119,12 @@ fun interp(exp_with_pos: exp_with_pos, env: env): pure toy-value {
     }
     FnE(params, body) -> CloV(params, body, env)
     IdE(name) -> match env.get(name) {
-      Just(value) -> value
+      Just(addr) -> {
+        match get(addr) {
+          Just(value) -> value
+          Nothing -> throw("Uninitialized identifier: " ++ name)
+        }
+      }
       Nothing -> throw("Unbound identifier: " ++ name)
     }
     AppE(operator, operands) -> {
@@ -122,29 +138,26 @@ fun interp(exp_with_pos: exp_with_pos, env: env): pure toy-value {
           val extended_env = clo_env.insert_all(params.zip(operand_values))
           body.interp(extended_env)
         }
-        RecV(params, body, clo_env, recs) -> {
-          if (params.length != operands.length) then {
-            throw("Unexpected number of arguments. Expected " ++ params.length.show ++ ", but got " ++ operands.length.show)
-          }
-          
-          val inflated_recs = recs.map(fn(rec_def) {
-            (rec_def.name, rec_def.inflate(clo_env, recs))
-          })
-          val env_with_inflated = clo_env.insert_all_if_absent(inflated_recs)
-
-          val extended_env = env_with_inflated.insert_all(params.zip(operand_values))
-
-          body.interp(extended_env)
-        }
         _ -> throw("Cannot apply non-function")
       }
     }
     ValE(_, right_hand_side) -> right_hand_side.interp(env)
-    DefE(_) -> throw("Recursive definition does not evaluate") // mostly because I'm lazy and don't want to figure out how to get the other recursive defs here
+    DefE(Recursive_def(_, params, body)) -> CloV(params, body, env)
   }
 }
 
-fun run(prog: string): <pure,console> toy-value {
+fun run(prog: string): <pure, console> toy-value {
+  var store := thread/hash-map()
+  var last_addr := 0
+
+  with handler<store_update> {
+    fun get(addr: addr) store.get(addr)
+    fun set(addr: addr, value: toy-value) store := store.insert(addr, value)
+    fun fresh_addr() {
+      last_addr := last_addr + 1
+      last_addr
+    }
+  }
   prog.tokenize.parse_exp.interp(thread/hash-map())
 }
 
