@@ -22,7 +22,7 @@ fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>) {
   // ensure recursive functions have correct type
   val env_with_rec_defs = exps_with_poses.foldl(env, fn(acc_env, block_exp) {
     match block_exp.exp {
-      DefE(Recursive_def(name, params, return_type, _)) -> {
+      DefE(name, params, return_type, _)-> {
         val param_types = params.map(declaration/type_tag)
         acc_env.insert(name, ArrowT(param_types, return_type))
       }
@@ -31,7 +31,7 @@ fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>) {
   })
   exps_with_poses.foreach(fn(block_exp) {
     match block_exp.exp {
-      DefE(Recursive_def(_, params, return_type, body)) -> {
+      DefE(_, params, return_type, body) -> {
         val env_with_params = env_with_rec_defs.insert_all(params.map(fn(param) (param.name, param.type_tag)))
         val inferred_return_type = body.typecheck(env_with_params)
         if (!(inferred_return_type == return_type)) then {
@@ -51,7 +51,7 @@ fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>) {
         }
         acc_env.insert(name, rhs_type)
       }
-      DefE(Recursive_def(name, params, return_type, _)) -> {
+      DefE(name, params, return_type, _) -> {
         val param_types = params.map(declaration/type_tag)
         acc_env.insert(name, ArrowT(param_types, return_type))
       }
@@ -92,6 +92,6 @@ fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
       }
     }
     ValE(_, rhs) -> rhs.typecheck(env)
-    DefE(Recursive_def(_, params, return_type, _)) -> ArrowT(params.map(declaration/type_tag), return_type)
+    DefE(_, params, return_type, _) -> ArrowT(params.map(declaration/type_tag), return_type)
   }
 }
