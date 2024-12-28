@@ -74,7 +74,7 @@ fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>): <pure, 
   val updated_env = exps_with_poses.foldl(env, fn(acc_env, block_exp) {
     match block_exp.exp {
       ValE(name, _) -> acc_env.insert(name, fresh_addr())
-      DefE(Recursive_def(name, _, _)) -> acc_env.insert(name, fresh_addr())
+      DefE(name, _, _) -> acc_env.insert(name, fresh_addr())
       _ -> acc_env
     }
   })
@@ -82,7 +82,7 @@ fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>): <pure, 
   // hoist def functions
   exps_with_poses.foreach(fn(block_exp) {
     match block_exp.exp {
-      DefE(Recursive_def(name, params, body)) -> set(updated_env.get_or_throw(name), CloV(params, body, updated_env))
+      DefE(name, params, body) -> set(updated_env.get_or_throw(name), CloV(params, body, updated_env))
       _ -> ()
     }
   })
@@ -142,7 +142,7 @@ fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value
       }
     }
     ValE(_, right_hand_side) -> right_hand_side.interp(env)
-    DefE(Recursive_def(_, params, body)) -> CloV(params, body, env)
+    DefE(_, params, body) -> CloV(params, body, env)
   }
 }
 
@@ -201,10 +201,10 @@ fun main()
     "{ val x = 42. val y = x. y }".run
   check(IntV(42))
     "{ val x = (fn(x): x)(42). x }".run
-  check(DefE(Recursive_def("recur", ["x"],
+  check(DefE("recur", ["x"],
       Exp_With_Pos(AppE(
         Exp_With_Pos(IdE("recur"), Pos(0,14), Pos(0,19)),
-        [Exp_With_Pos(IdE("x"), Pos(0,20), Pos(0,21))]), Pos(0,14), Pos(0,22)))))
+        [Exp_With_Pos(IdE("x"), Pos(0,20), Pos(0,21))]), Pos(0,14), Pos(0,22))))
     "def recur(x): recur(x)".tokenize.parse_exp.exp
   check(IntV(42))
     "{ def g(x): f(x). def f(x): x. g(42) }".run

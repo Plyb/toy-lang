@@ -11,13 +11,7 @@ type exp {
   IdE(name: string)
   AppE(operator: exp_with_pos, operands: list<exp_with_pos>)
   ValE(name: string, right_hand_side: exp_with_pos)
-  DefE(def: recursive_def)
-}
-
-struct recursive_def {
-  name: string
-  params: list<string>
-  body: exp_with_pos
+  DefE(name: string, params: list<string>, body: exp_with_pos)
 }
 
 fun exp/(==)(a: exp, b: exp): div bool {
@@ -33,8 +27,7 @@ fun exp/(==)(a: exp, b: exp): div bool {
     (ValE(a_name, a_right_hand_side), ValE(b_name, b_right_hand_side)) ->
       a_name == b_name
       && a_right_hand_side == b_right_hand_side
-    (DefE(Recursive_def(a_name, a_params, a_body)),
-        DefE(Recursive_def(b_name, b_params, b_body))) ->
+    (DefE(a_name, a_params, a_body), DefE(b_name, b_params, b_body)) ->
       a_name == b_name
       && a_params == b_params
       && a_body == b_body
@@ -50,7 +43,7 @@ fun exp/show(exp: exp): div string {
     IdE(name) -> "IdE(" ++ name ++ ")"
     AppE(operator, operands) -> "AppE(" ++ operator.show ++ ", " ++ operands.show ++ ")"
     ValE(name, right_hand_side) -> "ValE(" ++ name ++ ", " ++ right_hand_side.show ++ ")"
-    DefE(Recursive_def(name, params, body)) -> "DefE(" ++ name ++ ", " ++ params.show ++ ", " ++ body.show ++ ")"  
+    DefE(name, params, body) -> "DefE(" ++ name ++ ", " ++ params.show ++ ", " ++ body.show ++ ")"  
   }
 }
 
@@ -179,7 +172,7 @@ fun p_def(): <ast<token_with_pos>> exp_with_pos {
   p_colon()
   val body = p_exp()
   Exp_With_Pos(
-    DefE(Recursive_def(name, params, body)),
+    DefE(name, params, body),
     start,
     body.end
   )
