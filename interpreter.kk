@@ -23,6 +23,8 @@ fun check-exn(expected-err: string, f: () -> <console,exn|e> a, ?kk-file-line: s
 type toy-value {
   IntV(n: int)
   CloV(params: list<string>, body: exp_with_pos, env: env)
+  ConstructorV(option_name: string, params: list<string>)
+  AlgebraicV(option_name: string, args: list<toy-value>)
 }
 
 fun toy-value/(==)(a: toy-value, b: toy-value): div bool {
@@ -31,6 +33,12 @@ fun toy-value/(==)(a: toy-value, b: toy-value): div bool {
     (CloV(a_params, a_body, _), CloV(b_params, b_body, _)) ->
       a_params == b_params
       && a_body == b_body
+    (ConstructorV(a_option_name, a_params), ConstructorV(b_option_name, b_params)) ->
+      a_option_name == b_option_name
+      && a_params == b_params
+    (AlgebraicV(a_option_name, a_args), AlgebraicV(b_option_name, b_args)) ->
+      a_option_name == b_option_name
+      && list/(==)(a_args, b_args, ?(==) = fn(a_arg, b_arg) pretend-no-div(fn() a_arg == b_arg))
     _ -> False
   }
 }
@@ -39,6 +47,8 @@ fun toy-value/show(value: toy-value): div string {
   match value {
     IntV(n) -> "IntV(" ++ n.show ++ ")"
     CloV(params, body, _) -> "CloV(" ++ params.show ++ ", " ++ body.show ++ ")"
+    ConstructorV(option_name, params) -> "ConstructorV(" ++ option_name ++ ", " ++ params.show ++ ")"
+    AlgebraicV(option_name, args) -> "AlgebraicV(" ++ option_name ++ ", " ++ args.show ++ ")"
   }
 }
 
@@ -64,25 +74,22 @@ effect store_update {
 }
 
 fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>): <pure, store_update> env {
-  val rec_defs = exps_with_poses.flatmap-maybe(fn(exp_with_pos) {
-    match exp_with_pos.exp {
-      DefE(rec_def) -> Just(rec_def)
-      _ -> Nothing
-    }
-  })
-
   val updated_env = exps_with_poses.foldl(env, fn(acc_env, block_exp) {
     match block_exp.exp {
       ValE(name, _) -> acc_env.insert(name, fresh_addr())
       DefE(name, _, _) -> acc_env.insert(name, fresh_addr())
+      TypeDefE(_, options) -> acc_env.insert_all(options.map(fn(option) (option.name, fresh_addr())))
       _ -> acc_env
     }
   })
 
-  // hoist def functions
+  // hoist def functions and constructors
   exps_with_poses.foreach(fn(block_exp) {
     match block_exp.exp {
       DefE(name, params, body) -> set(updated_env.get_or_throw(name), CloV(params, body, updated_env))
+      TypeDefE(_, options) -> options.foreach(fn(option)
+        set(updated_env.get_or_throw(option.name), ConstructorV(option.name, option.params))
+      )
       _ -> ()
     }
   })
@@ -91,6 +98,8 @@ fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>): <pure, 
   exps_with_poses.foreach(fn(block_exp) {
     match block_exp.exp {
       ValE(name, rhs) -> set(updated_env.get_or_throw(name), rhs.interp(updated_env))
+      DefE(_, _, _) -> ()
+      TypeDefE(_, _) -> ()
       _ -> {
         block_exp.interp(updated_env)
         ()
@@ -105,6 +114,10 @@ fun insert_all(env: env, entries: list<(string, toy-value)>): <exn, store_update
   val updated_env = entries.foldl(env, fn(acc_env, (key, _)) acc_env.insert(key, fresh_addr()))
   entries.foreach(fn((key, value)) set(updated_env.get_or_throw(key), value))
   updated_env
+}
+
+fun env/insert_all(env: env, entries: list<(string, addr)>): env {
+  entries.foldl(env, fn(acc_env, (key, addr)) acc_env.insert(key, addr))
 }
 
 fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value {
@@ -138,11 +151,18 @@ fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value
           val extended_env = clo_env.insert_all(params.zip(operand_values))
           body.interp(extended_env)
         }
+        ConstructorV(option_name, params) -> {
+          if (params.length != operands.length) then {
+            throw("Unexpected number of arguments. Expected " ++ params.length.show ++ ", but got " ++ operands.length.show)
+          }
+          AlgebraicV(option_name, operand_values)
+        }
         _ -> throw("Cannot apply non-function")
       }
     }
     ValE(_, right_hand_side) -> right_hand_side.interp(env)
     DefE(_, params, body) -> CloV(params, body, env)
+    TypeDefE(_, _) -> throw("Type definition does not evaluate")
   }
 }
 
@@ -225,5 +245,11 @@ fun main()
         fn(): whatWeWant,
         fn(): dontReturnThis
       )
+    }".run
+  check(AlgebraicV("pair", [IntV(1), IntV(2)]))
+    r"{
+      type myType
+        pair(fst, snd).
+      pair(1, 2)
     }".run
   
