@@ -78,7 +78,7 @@ fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>): <pure, 
     match block_exp.exp {
       ValE(name, _) -> acc_env.insert(name, fresh_addr())
       DefE(name, _, _) -> acc_env.insert(name, fresh_addr())
-      TypeDefE(_, options) -> acc_env.insert_all(options.map(fn(option) (option.name, fresh_addr())))
+      TypeDefE(_, options) -> acc_env.insert_all(options.map(fn(option) (option.name, fresh_addr())).to_list)
       _ -> acc_env
     }
   })
@@ -87,7 +87,7 @@ fun add_block_statements(env: env, exps_with_poses: list<exp_with_pos>): <pure, 
   exps_with_poses.foreach(fn(block_exp) {
     match block_exp.exp {
       DefE(name, params, body) -> set(updated_env.get_or_throw(name), CloV(params, body, updated_env))
-      TypeDefE(_, options) -> options.foreach(fn(option)
+      TypeDefE(_, options) -> options.to_list.foreach(fn(option)
         set(updated_env.get_or_throw(option.name), ConstructorV(option.name, option.params))
       )
       _ -> ()
@@ -167,7 +167,7 @@ fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value
       val discriminee_value = discriminee.interp(env)
       match discriminee_value {
         AlgebraicV(option_name, args) -> {
-          val case = match cases.find(fn(case) case.constructor_name == option_name) {
+          val case = match cases.to_list.find(fn(case) case.constructor_name == option_name) {
             Just(case) -> case
             Nothing -> throw("No matching case for " ++ option_name ++ " at " ++ exp.show)
           }

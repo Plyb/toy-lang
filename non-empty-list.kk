@@ -59,7 +59,7 @@ fun to_list(list: non-empty-list<a>): list<a> {
   }
 }
 
-fun non-empty-list/map(items: non-empty-list<a>, convert: a -> b): non-empty-list<b> {
+fun non-empty-list/map(items: non-empty-list<a>, convert: a -> e b): e non-empty-list<b> {
   match items {
     NELast(item) -> NELast(convert(item))
     NECons(head, tail) -> NECons(convert(head), tail.map(convert))

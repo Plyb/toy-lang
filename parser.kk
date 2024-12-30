@@ -12,8 +12,8 @@ type exp {
   AppE(operator: exp_with_pos, operands: list<exp_with_pos>)
   ValE(name: string, right_hand_side: exp_with_pos)
   DefE(name: string, params: list<string>, body: exp_with_pos)
-  TypeDefE(name: string, options: list<constructor_def>)
-  MatchE(discriminee: exp_with_pos, cases: list<case>)
+  TypeDefE(name: string, options: non-empty-list<constructor_def>)
+  MatchE(discriminee: exp_with_pos, cases: non-empty-list<case>)
 }
 
 fun exp/(==)(a: exp, b: exp): div bool {
@@ -38,7 +38,7 @@ fun exp/(==)(a: exp, b: exp): div bool {
       && a_options == b_options
     (MatchE(a_discriminee, a_cases), MatchE(b_discriminee, b_cases)) ->
       a_discriminee == b_discriminee
-      && list/(==)(a_cases, b_cases, ?(==) = fn(a_case, b_case) pretend-no-div(fn() a_case == b_case))
+      && non-empty-list/(==)(a_cases, b_cases, ?(==) = fn(a_case, b_case) pretend-no-div(fn() a_case == b_case))
     _ -> False
   }
 }
@@ -53,7 +53,7 @@ fun exp/show(exp: exp): div string {
     ValE(name, right_hand_side) -> "ValE(" ++ name ++ ", " ++ right_hand_side.show ++ ")"
     DefE(name, params, body) -> "DefE(" ++ name ++ ", " ++ params.show ++ ", " ++ body.show ++ ")"
     TypeDefE(name, options) -> "TypeDefE(" ++ name ++ ", " ++ options.show ++ ")"
-    MatchE(discriminee, cases) -> "MatchE(" ++ discriminee.show ++ ", " ++ cases.show ++ ")"
+    MatchE(discriminee, cases) -> "MatchE(" ++ discriminee.show ++ ", " ++ show(cases, ?show = fn(case) pretend-no-div(fn() case.show)) ++ ")"
   }
 }
 
@@ -234,7 +234,7 @@ fun p_typedef(): <ast<token_with_pos>> exp_with_pos {
   val constructors_with_ends = assert-non-empty(
     p-sep-by1("options list", p_constructor_def, p_option_separator)
   )
-  val constructors = constructors_with_ends.to_list.map(fst)
+  val constructors = constructors_with_ends.map(fst)
   val end = constructors_with_ends.last.snd
   Exp_With_Pos(TypeDefE(name, constructors), start, end)
 }
@@ -252,7 +252,7 @@ fun p_match(): <ast<token_with_pos>> exp_with_pos {
   val start = p_match_keyword().start
   val discriminee = p_exp()
   p_open_brace()
-  val cases = p-sep-by1("cases", p_case, p_option_separator)
+  val cases = assert-non-empty(p-sep-by1("cases", p_case, p_option_separator))
   val end = p_close_brace().end
   Exp_With_Pos(MatchE(discriminee, cases), start, end)
 }
