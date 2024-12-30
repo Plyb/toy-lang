@@ -12,6 +12,7 @@ type exp {
   AppE(operator: exp_with_pos, operands: list<exp_with_pos>)
   ValE(left_hand_side: declaration, right_hand_side: exp_with_pos)
   DefE(name: string, params: list<declaration>, return_type: toy-type, body: exp_with_pos)
+  TypeDefE(name: string, options: list<constructor_def>)
 }
 
 fun exp/(==)(a: exp, b: exp): div bool {
@@ -36,6 +37,9 @@ fun exp/(==)(a: exp, b: exp): div bool {
         ?(==) = fn(a_param, b_param) pretend-no-div(fn() a_param == b_param))
       && a_return_type == b_return_type
       && a_body == b_body
+    (TypeDefE(a_name, a_options), TypeDefE(b_name, b_options)) ->
+      a_name == b_name
+      && a_options == b_options
     _ -> False
   }
 }
@@ -48,7 +52,8 @@ fun exp/show(exp: exp): div string {
     IdE(name) -> "IdE(" ++ name ++ ")"
     AppE(operator, operands) -> "AppE(" ++ operator.show ++ ", " ++ operands.show ++ ")"
     ValE(lhs, rhs) -> "ValE(" ++ lhs.show ++ ", " ++ rhs.show ++ ")"
-    DefE(name, params, return_type, body) -> "DefE(" ++ name ++ ", " ++ params.show ++ ", " ++ return_type.show ++ "," ++ body.show ++ ")"  
+    DefE(name, params, return_type, body) -> "DefE(" ++ name ++ ", " ++ params.show ++ ", " ++ return_type.show ++ "," ++ body.show ++ ")"
+    TypeDefE(name, options) -> "TypeDefE(" ++ name ++ ", " ++ options.show ++ ")"
   }
 }
 
@@ -71,6 +76,7 @@ fun exp_with_pos/show(a: exp_with_pos): div string {
 type toy-type {
   IntT
   ArrowT(params: list<toy-type>, return_type: toy-type)
+  AlgebraicT(name: string, pos: pos) // pos used for disambiguation
 }
 
 fun toy-type/(==)(a: toy-type, b: toy-type): div bool {
@@ -80,6 +86,9 @@ fun toy-type/(==)(a: toy-type, b: toy-type): div bool {
       list/(==)(a_params, b_params,
         ?(==) = fn(a_param, b_param) pretend-no-div(fn() a_param == b_param))
       && a_return_type == b_return_type
+    (AlgebraicT(a_name, a_pos), AlgebraicT(b_name, b_pos)) ->
+      a_name == b_name
+      && a_pos == b_pos
     (_, _) -> False
   }
 }
@@ -88,6 +97,7 @@ fun toy-type/show(a: toy-type): div string {
   match a {
     IntT -> "IntT()"
     ArrowT(params, return_type) -> "ArrowT(" ++ params.show ++ ", " ++ return_type.show ++ ")"
+    AlgebraicT(name, pos) -> "AlgebraicT(" ++ name ++ ", " ++ pos.show ++ ")"
   }
 }
 
@@ -102,6 +112,19 @@ fun declaration/(==)(a: declaration, b: declaration): div bool {
 
 fun declaration/show(a: declaration): div string {
   "Declaration(" ++ a.name ++ ", " ++ a.type_tag.show ++ ")"
+}
+
+value struct constructor_def {
+  name: string
+  params: list<declaration>
+}
+
+fun constructor_def/(==)(a: constructor_def, b: constructor_def): bool {
+  a.name == b.name && list/(==)(a.params, b.params, ?(==) = fn(a_param, b_param) pretend-no-div(fn() a_param == b_param))
+}
+
+fun constructor_def/show(a: constructor_def): div string {
+  "Constructor_Def(" ++ a.name ++ ", " ++ a.params.show ++ ")"
 }
 
 fun parse_error_to_maybe(parse_error: parse-error<o>): maybe<o> {
@@ -152,6 +175,8 @@ fun p_val_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("val")
 fun p_def_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("def")
 fun p_list_separator(): ast<token_with_pos> token_with_pos -> p_eq(ListSeparatorToken)
 fun p_arrow(): ast<token_with_pos> token_with_pos -> p_eq(ArrowToken)
+fun p_typedef_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("type")
+fun p_option_separator(): ast<token_with_pos> token_with_pos -> p_eq(OptionSeparatorToken)
 
 fun p_int_type(): ast<token_with_pos> toy-type -> {
   p_keyword("int")
@@ -253,6 +278,25 @@ fun p_def(): <ast<token_with_pos>> exp_with_pos {
   )
 }
 
+fun p_constructor_def(): <ast<token_with_pos>> (constructor_def, pos) {
+  val (name, _, _) = p_word()
+  p_open_paren()
+  val params = p_param_list()
+  val end = p_close_paren().end
+  (Constructor_Def(name, params), end)
+}
+
+fun p_typedef(): <ast<token_with_pos>> exp_with_pos {
+  val start = p_typedef_keyword().start
+  val (name, _, _) = p_word()
+  val constructors_with_ends = assert-non-empty(
+    p-sep-by1("options list", p_constructor_def, p_option_separator)
+  )
+  val constructors = constructors_with_ends.to_list.map(fst)
+  val end = constructors_with_ends.last.snd
+  Exp_With_Pos(TypeDefE(name, constructors), start, end)
+}
+
 fun p_operator(): <ast<token_with_pos>> exp_with_pos {
   // by doing a peek first, we can get better error messages
   val first_token_with_pos = match ppeek() {
@@ -265,6 +309,7 @@ fun p_operator(): <ast<token_with_pos>> exp_with_pos {
     WordToken("fn") -> p_fn()
     WordToken("val") -> p_val()
     WordToken("def") -> p_def()
+    WordToken("type") -> p_typedef()
     _ -> pchoices("Atom", [
       p_int,
       p_parenthesized,

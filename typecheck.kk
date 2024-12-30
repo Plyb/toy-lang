@@ -11,38 +11,8 @@ fun insert_all(env: type-env, entries: list<(string, toy-type)>) {
   entries.foldl(env, fn(acc_env, (key, value)) acc_env.insert(key, value))
 }
 
-fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>) {
-  val rec_defs = exps_with_poses.flatmap-maybe(fn (exp_with_pos) {
-    match exp_with_pos.exp {
-      DefE(rec_def) -> Just(rec_def)
-      _ -> Nothing
-    }
-  })
-
-  // ensure recursive functions have correct type
-  val env_with_rec_defs = exps_with_poses.foldl(env, fn(acc_env, block_exp) {
-    match block_exp.exp {
-      DefE(name, params, return_type, _)-> {
-        val param_types = params.map(declaration/type_tag)
-        acc_env.insert(name, ArrowT(param_types, return_type))
-      }
-      _ -> acc_env
-    }
-  })
-  exps_with_poses.foreach(fn(block_exp) {
-    match block_exp.exp {
-      DefE(_, params, return_type, body) -> {
-        val env_with_params = env_with_rec_defs.insert_all(params.map(fn(param) (param.name, param.type_tag)))
-        val inferred_return_type = body.typecheck(env_with_params)
-        if (!(inferred_return_type == return_type)) then {
-          throw("Expected type " ++ return_type.show ++ ", but got " ++ inferred_return_type.show)
-        }
-      }
-      _ -> ()
-    }
-  })
-
-  exps_with_poses.foldl(env, fn(acc_env, block_exp) {
+fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>): pure type-env {
+  val updated_env = exps_with_poses.foldl(env, fn(acc_env, block_exp) {
     match block_exp.exp {
       ValE(Declaration(name, type_tag), right_hand_side) -> {
         val rhs_type = right_hand_side.typecheck(acc_env)
@@ -55,9 +25,29 @@ fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>) {
         val param_types = params.map(declaration/type_tag)
         acc_env.insert(name, ArrowT(param_types, return_type))
       }
+      TypeDefE(type_name, options) -> acc_env.insert_all(options.map(fn(option) {
+        val param_types = option.params.map(type_tag)
+        (option.name, ArrowT(param_types, AlgebraicT(type_name, block_exp.start)))
+      }))
       _ -> acc_env
     }
   })
+
+  // ensure recursive functions have correct type
+  exps_with_poses.foreach(fn(block_exp) {
+    match block_exp.exp {
+      DefE(_, params, return_type, body) -> {
+        val env_with_params = updated_env.insert_all(params.map(fn(param) (param.name, param.type_tag)))
+        val inferred_return_type = body.typecheck(env_with_params)
+        if (!(inferred_return_type == return_type)) then {
+          throw("Expected type " ++ return_type.show ++ ", but got " ++ inferred_return_type.show)
+        }
+      }
+      _ -> ()
+    }
+  })
+
+  updated_env
 }
 
 fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
@@ -67,7 +57,26 @@ fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
     IntE(_) -> IntT
     BlockE(exps) -> {
       val extended_env = env.add_block_statements(exps.all_but_last)
-      exps.last.typecheck(extended_env)
+      val last_type = exps.last.typecheck(extended_env)
+      
+      match last_type {
+        AlgebraicT(_) -> {
+          // ensure algebraic types don't escape their definitions
+          val there_are_constructors_for_last_type_in_outer_env = env.data.list.concat.any(fn((_, toy-type))
+            match toy-type {
+              ArrowT(_, return_type) -> return_type == last_type
+              _ -> False
+            }
+          )
+          if (!there_are_constructors_for_last_type_in_outer_env) then {
+            throw("Typecheck: type " ++ last_type.show ++ " should not escape its definition, but it does at " ++ exps.last.show)
+          }
+        }
+        _ -> ()
+      }
+      
+
+      last_type
     }
     FnE(params, body) -> {
       val extended_env = env.insert_all(params.map(fn(param) (param.name, param.type_tag)))
@@ -77,7 +86,7 @@ fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
     IdE(name) -> {
       match env.get(name) {
         Just(toy-type) -> toy-type
-        Nothing -> throw("Unbound identifier: " ++ name ++ " @ " ++ start.show)
+        Nothing -> throw("Typecheck: Unbound identifier: " ++ name ++ " @ " ++ start.show)
       }
     }
     AppE(operator, operands) -> {
@@ -87,11 +96,12 @@ fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
         ArrowT(params, return_type) ->
           if (list/(==)(params, operand_types, ?(==) = fn(param, operand_type) pretend-no-div(fn() param == operand_type)))
           then return_type
-          else throw("Expected parameter types " ++ params.show ++ ", but got " ++ operand_types.show)
-        _ -> throw("Cannot apply non-function: " ++ exp.show ++ " @ " ++ start.show)
+          else throw("Typecheck: Expected parameter types " ++ params.show ++ ", but got " ++ operand_types.show)
+        _ -> throw("Typecheck: Cannot apply non-function: " ++ exp.show ++ " @ " ++ start.show)
       }
     }
     ValE(_, rhs) -> rhs.typecheck(env)
     DefE(_, params, return_type, _) -> ArrowT(params.map(declaration/type_tag), return_type)
+    TypeDefE(_, _) -> throw("Typecheck: type definitions don't have a type: " ++ exp.show ++ " @ " ++ start.show)
   }
 }
