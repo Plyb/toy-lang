@@ -13,6 +13,7 @@ type exp {
   ValE(left_hand_side: declaration, right_hand_side: exp_with_pos)
   DefE(name: string, params: list<declaration>, return_type: toy-type, body: exp_with_pos)
   TypeDefE(name: string, options: list<constructor_def>)
+  MatchE(discriminee: exp_with_pos, cases: list<case>)
 }
 
 fun exp/(==)(a: exp, b: exp): div bool {
@@ -40,6 +41,9 @@ fun exp/(==)(a: exp, b: exp): div bool {
     (TypeDefE(a_name, a_options), TypeDefE(b_name, b_options)) ->
       a_name == b_name
       && a_options == b_options
+    (MatchE(a_discriminee, a_cases), MatchE(b_discriminee, b_cases)) ->
+      a_discriminee == b_discriminee
+      && list/(==)(a_cases, b_cases, ?(==) = fn(a_case, b_case) pretend-no-div(fn() a_case == b_case))
     _ -> False
   }
 }
@@ -54,6 +58,7 @@ fun exp/show(exp: exp): div string {
     ValE(lhs, rhs) -> "ValE(" ++ lhs.show ++ ", " ++ rhs.show ++ ")"
     DefE(name, params, return_type, body) -> "DefE(" ++ name ++ ", " ++ params.show ++ ", " ++ return_type.show ++ "," ++ body.show ++ ")"
     TypeDefE(name, options) -> "TypeDefE(" ++ name ++ ", " ++ options.show ++ ")"
+    MatchE(discriminee, cases) -> "MatchE(" ++ discriminee.show ++ ", " ++ cases.show ++ ")"
   }
 }
 
@@ -127,6 +132,22 @@ fun constructor_def/show(a: constructor_def): div string {
   "Constructor_Def(" ++ a.name ++ ", " ++ a.params.show ++ ")"
 }
 
+struct case {
+  constructor_name: string
+  params: list<string>
+  body: exp_with_pos
+}
+
+fun case/(==)(a: case, b: case): div bool {
+  a.constructor_name == b.constructor_name
+  && a.params == b.params
+  && a.body == b.body
+}
+
+fun case/show(a: case): div string {
+  "Case(" ++ a.constructor_name ++ ", " ++ a.params.show ++ ", " ++ a.body.show ++ ")"
+}
+
 fun parse_error_to_maybe(parse_error: parse-error<o>): maybe<o> {
   match parse_error {
     ParseOk(res) -> Just(res)
@@ -177,6 +198,7 @@ fun p_list_separator(): ast<token_with_pos> token_with_pos -> p_eq(ListSeparator
 fun p_arrow(): ast<token_with_pos> token_with_pos -> p_eq(ArrowToken)
 fun p_typedef_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("type")
 fun p_option_separator(): ast<token_with_pos> token_with_pos -> p_eq(OptionSeparatorToken)
+fun p_match_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("match")
 
 fun p_int_type(): ast<token_with_pos> toy-type -> {
   p_keyword("int")
@@ -297,6 +319,24 @@ fun p_typedef(): <ast<token_with_pos>> exp_with_pos {
   Exp_With_Pos(TypeDefE(name, constructors), start, end)
 }
 
+fun p_case(): <ast<token_with_pos>> case {
+  val constructor_name = p_word().fst
+  p_open_paren()
+  val params = p-sep-by("case params", fn() p_word().fst, p_list_separator)
+  p_close_paren()
+  val body = p_exp()
+  Case(constructor_name, params, body)
+}
+
+fun p_match(): <ast<token_with_pos>> exp_with_pos {
+  val start = p_match_keyword().start
+  val discriminee = p_exp()
+  p_open_brace()
+  val cases = p-sep-by1("cases", p_case, p_option_separator)
+  val end = p_close_brace().end
+  Exp_With_Pos(MatchE(discriminee, cases), start, end)
+}
+
 fun p_operator(): <ast<token_with_pos>> exp_with_pos {
   // by doing a peek first, we can get better error messages
   val first_token_with_pos = match ppeek() {
@@ -310,6 +350,7 @@ fun p_operator(): <ast<token_with_pos>> exp_with_pos {
     WordToken("val") -> p_val()
     WordToken("def") -> p_def()
     WordToken("type") -> p_typedef()
+    WordToken("match") -> p_match()
     _ -> pchoices("Atom", [
       p_int,
       p_parenthesized,

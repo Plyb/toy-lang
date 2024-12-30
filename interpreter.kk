@@ -164,6 +164,22 @@ fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value
     ValE(_, right_hand_side) -> right_hand_side.interp(env)
     DefE(_, params, _, body) -> CloV(params.map(declaration/name), body, env)
     TypeDefE(_, _) -> throw("Type definition does not evaluate")
+    MatchE(discriminee, cases) -> {
+      val discriminee_value = discriminee.interp(env)
+      match discriminee_value {
+        AlgebraicV(option_name, args) -> {
+          val case = match cases.find(fn(case) case.constructor_name == option_name) {
+            Just(case) -> case
+            Nothing -> throw("No matching case for " ++ option_name ++ " at " ++ exp.show)
+          }
+          if (!(case.params.length == args.length)) then {
+            throw("Unexpected number of case arguments. The case has " ++ case.params.length.show ++ ", but the discriminee has " ++ args.length.show ++ ". At " ++ exp.show)
+          }
+          val extended_env = env.insert_all(case.params.zip(args))
+          case.body.interp(extended_env)
+        }
+      }
+    }
   }
 }
 
@@ -250,10 +266,12 @@ fun main()
         fn(): dontReturnThis
       )
     }".run
-  // check(AlgebraicV("pair", [IntV(1), IntV(2)]))
-  //   r"{
-  //     type myType
-  //       pair(fst: int, snd: int).
-  //     pair(1, 2)
-  //   }".run
+  check(IntV(1))
+    r"{
+      type myType
+        pair(fst, snd).
+      match pair(1, 2) {
+        pair(x, y) x
+      }
+    }".run
   
