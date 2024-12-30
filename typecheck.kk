@@ -103,5 +103,50 @@ fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
     ValE(_, rhs) -> rhs.typecheck(env)
     DefE(_, params, return_type, _) -> ArrowT(params.map(declaration/type_tag), return_type)
     TypeDefE(_, _) -> throw("Typecheck: type definitions don't have a type: " ++ exp.show ++ " @ " ++ start.show)
+    MatchE(discriminee, cases) -> {
+      val discriminee_type = discriminee.typecheck(env)
+      val all_constructors_for_type = env.data.list.concat
+        .filter(fn((_, toy_type)) {
+          match toy_type {
+            ArrowT(_, return_type) -> return_type == discriminee_type
+            _ -> False
+          }
+        })
+        .map(fn((constructor_name, toy_type)) {
+          val params = match toy_type {
+            ArrowT(params, _) -> params
+            _ -> throw("Internal error: expected arrow type")
+          }
+          (constructor_name, params)
+        })
+      // if (!(all_constructors_for_type.length == cases.length)) then {
+      //   throw("Typecheck: Unexpected number of cases. Discriminee has type " ++ discriminee_type.show
+      //     ++ ", which has " ++ all_constructors_for_type.length.show ++ " constructors, but there are "
+      //     ++ cases.length.show ++ "cases. At " ++ exp.show )
+      // }
+      val case_types = cases.map(fn(case) {
+        val corresponding_constructor = match all_constructors_for_type.find(fn(constructor) case.constructor_name == constructor.tuple2/fst) {
+          Just(constructor) -> constructor
+          Nothing -> throw("Typecheck: unknown case " ++ case.constructor_name ++ " at " ++ exp.show)
+        }
+        // if (!(corresponding_constructor.snd.length == case.params.length)) then {
+        //   throw("Typecheck: incorrect number of parameters. "
+        //     ++ corresponding_constructor.fst.show ++ " should have " ++ corresponding_constructor.snd.length.show
+        //     ++ ", but it has " ++ case.params.list/length.show ++ " at " ++ exp.show)
+        // }
+
+        val extended_env = env.insert_all(case.params.zip(corresponding_constructor.snd))
+        case.body.typecheck(extended_env)
+      })
+
+      val first_case_type = case_types.non-empty-list/first
+      val other_case_types = case_types.all_but_first
+      other_case_types.foreach(fn(other_case_type) {
+        if (!(first_case_type == other_case_type)) then {
+          throw("Typecheck: case types do not match at " ++ exp_with_pos.exp_with_pos/exp.show) // current koka compiler causes a segfault if we use `exp` here instead of `exp_with_pos.exp_with_pos/exp`
+        }
+      })
+      first_case_type
+    }
   }
 }

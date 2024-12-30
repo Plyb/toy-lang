@@ -52,6 +52,13 @@ fun all_but_last(list: non-empty-list<a>): list<a> {
   }
 }
 
+fun all_but_first(list: non-empty-list<a>): list<a> {
+  match list {
+    NELast(_) -> Nil
+    NECons(_, tail) -> tail.to_list
+  }
+}
+
 fun to_list(list: non-empty-list<a>): list<a> {
   match list {
     NELast(item) -> [item]
@@ -68,4 +75,11 @@ fun non-empty-list/map(items: non-empty-list<a>, convert: a -> e b): e non-empty
 
 fun non-empty-list/foldl(items: non-empty-list<a>, starter: b, combine: (acc: b, curr: a) -> b): b {
   items.to_list.foldl(starter, combine)
+}
+
+fun non-empty-list/length(list: non-empty-list<a>): int {
+  match list {
+    NELast(_) -> 1
+    NECons(_, tail) -> 1 + tail.length
+  }
 }
