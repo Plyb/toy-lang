@@ -28,7 +28,7 @@ fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>): pu
       TypeDefE(type_name, options) -> acc_env.insert_all(options.map(fn(option) {
         val param_types = option.params.map(type_tag)
         (option.name, ArrowT(param_types, AlgebraicT(type_name, block_exp.start)))
-      }))
+      }).to_list)
       _ -> acc_env
     }
   })
