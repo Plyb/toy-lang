@@ -14,7 +14,7 @@ value type token {
   IntToken(num: int)
   OpenBraceToken
   CloseBraceToken
-  PeriodToken
+  LineSeparatorToken
   OpenParenToken
   CloseParenToken
   ColonToken
@@ -29,7 +29,7 @@ fun token/(==)(a: token, b: token): bool {
     (IntToken(a_num), IntToken(b_num)) -> a_num == b_num
     (OpenBraceToken, OpenBraceToken) -> True
     (CloseBraceToken, CloseBraceToken) -> True
-    (PeriodToken, PeriodToken) -> True
+    (LineSeparatorToken, LineSeparatorToken) -> True
     (OpenParenToken, OpenParenToken) -> True
     (CloseParenToken, CloseParenToken) -> True
     (ColonToken, ColonToken) -> True
@@ -46,7 +46,7 @@ fun token/show(tok: token): string {
     IntToken(num) -> "IntToken(" ++ num.show ++ ")"
     OpenBraceToken -> "OpenBraceToken"
     CloseBraceToken -> "CloseBraceToken"
-    PeriodToken -> "PeriodToken"
+    LineSeparatorToken -> "LineSeparatorToken"
     OpenParenToken -> "OpenParenToken"
     CloseParenToken -> "CloseParenToken"
     ColonToken -> "ColonToken"
@@ -98,9 +98,9 @@ fun ensure_next_char_not_digit(): <parse> () {
 }
 
 fun p_period_token(): <parse> token {
-  char('.')
+  char(';')
   ensure_next_char_not_digit()
-  PeriodToken
+  LineSeparatorToken
 }
 
 fun p_open_paren_token(): <parse> token {

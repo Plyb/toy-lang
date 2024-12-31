@@ -211,7 +211,7 @@ fun main()
     NECons(Exp_With_Pos(IntE(3), Pos(0,9), Pos(0,10)),
     NELast(Exp_With_Pos(IntE(4), Pos(0,12), Pos(0,13))
   )))))
-    parse_exp(tokenize("{{1. 2}. 3. 4}")).exp
+    parse_exp(tokenize("{{1; 2}; 3; 4}")).exp
   // check([WordToken("fn"), OpenParenToken, WordToken("x"), CloseParenToken, ColonToken, IntToken(1)])
   //   tokenize("fn(x): 1")
   check(FnE(["x"], Exp_With_Pos(IntE(1), Pos(0,7), Pos(0,8))))
@@ -219,7 +219,7 @@ fun main()
   check(FnE(["x"], Exp_With_Pos(BlockE(
       NECons(Exp_With_Pos(IntE(1), Pos(0,9), Pos(0,10)),
       NELast(Exp_With_Pos(IntE(2), Pos(0,12), Pos(0,13))))), Pos(0,7), Pos(0,15))))
-    parse_exp(tokenize("fn(x): { 1. 2 }")).exp
+    parse_exp(tokenize("fn(x): { 1; 2 }")).exp
   check(FnE(["x"], Exp_With_Pos(IdE("x"), Pos(0,7), Pos(0,8))))
     parse_exp(tokenize("fn(x): x")).exp
   check(AppE(
@@ -234,28 +234,28 @@ fun main()
   check(IntV(42))
     "(fn(x): x)(42)".run
   check(IntV(42))
-    "{ val x = 42. val y = x. y }".run
+    "{ val x = 42; val y = x; y }".run
   check(IntV(42))
-    "{ val x = (fn(x): x)(42). x }".run
+    "{ val x = (fn(x): x)(42); x }".run
   check(DefE("recur", ["x"],
       Exp_With_Pos(AppE(
         Exp_With_Pos(IdE("recur"), Pos(0,14), Pos(0,19)),
         [Exp_With_Pos(IdE("x"), Pos(0,20), Pos(0,21))]), Pos(0,14), Pos(0,22))))
     "def recur(x): recur(x)".tokenize.parse_exp.exp
   check(IntV(42))
-    "{ def g(x): f(x). def f(x): x. g(42) }".run
+    "{ def g(x): f(x); def f(x): x; g(42) }".run
   check(IntV(42))
     "(fn(x): fn(): x)(42)()".run
   check(IntV(1))
     "(fn(x, y): x)(1, 2)".run
   check(IntV(42))
     r"{
-      def true(x, y): x.
-      def false(x, y): y.
-      def if(cond, then, else): cond(then(), else()).
+      def true(x, y): x;
+      def false(x, y): y;
+      def if(cond, then, else): cond(then(), else());
 
-      val whatWeWant = 42.
-      val dontReturnThis = 0.
+      val whatWeWant = 42;
+      val dontReturnThis = 0;
 
       if(true,
         fn(): whatWeWant,
@@ -265,7 +265,7 @@ fun main()
   check(IntV(1))
     r"{
       type myType
-        pair(fst, snd).
+        pair(fst, snd);
       match pair(1, 2) {
         pair(x, y) x
       }
