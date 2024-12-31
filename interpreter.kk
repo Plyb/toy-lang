@@ -175,7 +175,7 @@ fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value
 
 fun run(prog: string): <pure, console> toy-value {
   val exp = prog.tokenize.parse_exp
-  exp.typecheck(thread/hash-map())
+  exp.typecheck(thread/hash-map(), thread/hash-map())
 
   var store := thread/hash-map()
   var last_addr := 0

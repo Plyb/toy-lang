@@ -11,25 +11,30 @@ fun insert_all(env: type-env, entries: list<(string, toy-type)>) {
   entries.foldl(env, fn(acc_env, (key, value)) acc_env.insert(key, value))
 }
 
-fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>): pure type-env {
-  val updated_env = exps_with_poses.foldl(env, fn(acc_env, block_exp) {
+fun add_block_statements(env: type-env, type_aliases: type-env, exps_with_poses: list<exp_with_pos>): pure (type-env, type-env) {
+  val (updated_env, updated_aliases) = exps_with_poses.foldl((env, type_aliases), fn((acc_env, acc_aliases), block_exp) {
     match block_exp.exp {
       ValE(Declaration(name, type_tag), right_hand_side) -> {
-        val rhs_type = right_hand_side.typecheck(acc_env)
+        val rhs_type = right_hand_side.typecheck(acc_env, acc_aliases)
         if (!(rhs_type == type_tag)) then {
           throw("Expected type " ++ type_tag.show ++ ", but got " ++ rhs_type.show)
         }
-        acc_env.insert(name, rhs_type)
+        (acc_env.insert(name, rhs_type), acc_aliases)
       }
       DefE(name, params, return_type, _) -> {
         val param_types = params.map(declaration/type_tag)
-        acc_env.insert(name, ArrowT(param_types, return_type))
+        (acc_env.insert(name, ArrowT(param_types, return_type)), acc_aliases)
       }
-      TypeDefE(type_name, options) -> acc_env.insert_all(options.map(fn(option) {
-        val param_types = option.params.map(type_tag)
-        (option.name, ArrowT(param_types, AlgebraicT(type_name, block_exp.start)))
-      }).to_list)
-      _ -> acc_env
+      TypeDefE(type_name, options) -> {
+        val new_type = AlgebraicT(type_name, block_exp.start)
+        val env_with_constructors = acc_env.insert_all(options.map(fn(option) {
+          val param_types = option.params.map(type_tag)
+          (option.name, ArrowT(param_types, new_type))
+        }).to_list)
+        val aliases_with_new_type = acc_aliases.insert(type_name, new_type)
+        (env_with_constructors, aliases_with_new_type)
+      }
+      _ -> (acc_env, acc_aliases)
     }
   })
 
@@ -38,7 +43,7 @@ fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>): pu
     match block_exp.exp {
       DefE(_, params, return_type, body) -> {
         val env_with_params = updated_env.insert_all(params.map(fn(param) (param.name, param.type_tag)))
-        val inferred_return_type = body.typecheck(env_with_params)
+        val inferred_return_type = body.typecheck(env_with_params, updated_aliases)
         if (!(inferred_return_type == return_type)) then {
           throw("Expected type " ++ return_type.show ++ ", but got " ++ inferred_return_type.show)
         }
@@ -47,40 +52,37 @@ fun add_block_statements(env: type-env, exps_with_poses: list<exp_with_pos>): pu
     }
   })
 
-  updated_env
+  (updated_env, updated_aliases)
 }
 
-fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
+fun typecheck(exp_with_pos: exp_with_pos, env: type-env, type_aliases: type-env): pure toy-type {
   val exp = exp_with_pos.exp
   val start = exp_with_pos.start
   match exp {
     IntE(_) -> IntT
     BlockE(exps) -> {
-      val extended_env = env.add_block_statements(exps.all_but_last)
-      val last_type = exps.last.typecheck(extended_env)
+      val (extended_env, extended_aliases) = env.add_block_statements(type_aliases, exps.all_but_last)
+      val returned_type = exps.last.typecheck(extended_env, extended_aliases)
       
-      match last_type {
+      match returned_type {
         AlgebraicT(_) -> {
           // ensure algebraic types don't escape their definitions
-          val there_are_constructors_for_last_type_in_outer_env = env.data.list.concat.any(fn((_, toy-type))
-            match toy-type {
-              ArrowT(_, return_type) -> return_type == last_type
-              _ -> False
-            }
+          val outer_env_contains_returned_type = type_aliases.data.list.concat.any(fn((_, toy_type))
+            returned_type == toy_type
           )
-          if (!there_are_constructors_for_last_type_in_outer_env) then {
-            throw("Typecheck: type " ++ last_type.show ++ " should not escape its definition, but it does at " ++ exps.last.show)
+          if (!outer_env_contains_returned_type) then {
+            throw("Typecheck: type " ++ returned_type.show ++ " should not escape its definition, but it does at " ++ exps.last.show)
           }
         }
         _ -> ()
       }
       
 
-      last_type
+      returned_type
     }
     FnE(params, body) -> {
       val extended_env = env.insert_all(params.map(fn(param) (param.name, param.type_tag)))
-      val return_type = body.typecheck(extended_env)
+      val return_type = body.typecheck(extended_env, type_aliases)
       ArrowT(params.map(declaration/type_tag), return_type)
     }
     IdE(name) -> {
@@ -90,8 +92,8 @@ fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
       }
     }
     AppE(operator, operands) -> {
-      val operator_type = operator.typecheck(env)
-      val operand_types = operands.map(fn(operand) operand.typecheck(env))
+      val operator_type = operator.typecheck(env, type_aliases)
+      val operand_types = operands.map(fn(operand) operand.typecheck(env, type_aliases))
       match operator_type {
         ArrowT(params, return_type) ->
           if (list/(==)(params, operand_types, ?(==) = fn(param, operand_type) pretend-no-div(fn() param == operand_type)))
@@ -100,11 +102,11 @@ fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
         _ -> throw("Typecheck: Cannot apply non-function: " ++ exp.show ++ " @ " ++ start.show)
       }
     }
-    ValE(_, rhs) -> rhs.typecheck(env)
+    ValE(_, rhs) -> rhs.typecheck(env, type_aliases)
     DefE(_, params, return_type, _) -> ArrowT(params.map(declaration/type_tag), return_type)
     TypeDefE(_, _) -> throw("Typecheck: type definitions don't have a type: " ++ exp.show ++ " @ " ++ start.show)
     MatchE(discriminee, cases) -> {
-      val discriminee_type = discriminee.typecheck(env)
+      val discriminee_type = discriminee.typecheck(env, type_aliases)
       val all_constructors_for_type = env.data.list.concat
         .filter(fn((_, toy_type)) {
           match toy_type {
@@ -136,7 +138,7 @@ fun typecheck(exp_with_pos: exp_with_pos, env: type-env): pure toy-type {
         // }
 
         val extended_env = env.insert_all(case.params.zip(corresponding_constructor.snd))
-        case.body.typecheck(extended_env)
+        case.body.typecheck(extended_env, type_aliases)
       })
 
       val first_case_type = case_types.non-empty-list/first
