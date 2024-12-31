@@ -143,9 +143,8 @@ fun p_close_brace(): ast<token_with_pos> token_with_pos -> p_eq(CloseBraceToken)
 fun p_line_separator(): ast<token_with_pos> token_with_pos -> p_eq(LineSeparatorToken)
 fun p_open_paren(): ast<token_with_pos> token_with_pos -> p_eq(OpenParenToken)
 fun p_close_paren(): ast<token_with_pos> token_with_pos -> p_eq(CloseParenToken)
-fun p_colon(): ast<token_with_pos> token_with_pos -> p_eq(ColonToken)
 fun p_fn_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("fn")
-fun p_eq_token(): ast<token_with_pos> token_with_pos -> p_eq(EqToken)
+fun p_assignment_operator(): ast<token_with_pos> token_with_pos -> p_eq(AssignmentOperatorToken)
 fun p_val_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("val")
 fun p_def_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("def")
 fun p_list_separator(): ast<token_with_pos> token_with_pos -> p_eq(ListSeparatorToken)
@@ -180,7 +179,6 @@ fun p_fn(): <ast<token_with_pos>> exp_with_pos {
   p_open_paren()
   val params = p_param_list()
   p_close_paren()
-  p_colon()
   val body = p_exp()
   Exp_With_Pos(FnE(params, body), start, body.end)
 }
@@ -200,7 +198,7 @@ fun p_id(): <ast<token_with_pos>> exp_with_pos {
 fun p_val(): <ast<token_with_pos>> exp_with_pos {
   val start = p_val_keyword().start
   val (name, _, _) = p_word()
-  p_eq_token()
+  p_assignment_operator()
   val right_hand_side = p_exp()
   Exp_With_Pos(ValE(name, right_hand_side), start, right_hand_side.end)
 }
@@ -211,7 +209,7 @@ fun p_def(): <ast<token_with_pos>> exp_with_pos {
   p_open_paren()
   val params = p_param_list()
   p_close_paren()
-  p_colon()
+  p_assignment_operator()
   val body = p_exp()
   Exp_With_Pos(
     DefE(name, params, body),
