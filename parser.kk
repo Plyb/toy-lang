@@ -14,7 +14,7 @@ pub type exp {
   IdE(name: string)
   AppE(operator: exp_with_pos, operands: list<exp_with_pos>)
   ValE(left_hand_side: declaration, right_hand_side: exp_with_pos)
-  DefE(name: string, params: list<declaration>, return_type: toy-type, body: exp_with_pos)
+  DefE(name: string, params: list<declaration>, return_type: type-exp, body: exp_with_pos)
   TypeDefE(name: string, options: non-empty-list<constructor_def>)
   MatchE(discriminee: exp_with_pos, cases: non-empty-list<case>)
 }
@@ -81,37 +81,32 @@ pub fun exp_with_pos/show(a: exp_with_pos): div string {
   a.exp.show ++ " @ " ++ a.start.show ++ "-" ++ a.end.show
 }
 
-pub type toy-type {
-  IntT
-  ArrowT(params: list<toy-type>, return_type: toy-type)
-  AlgebraicT(name: string, pos: pos) // pos used for disambiguation
+pub type type-exp {
+  IdTE(name: string)
+  ArrowTE(params: list<type-exp>, return_type: type-exp)
 }
 
-pub fun toy-type/(==)(a: toy-type, b: toy-type): div bool {
+pub fun type-exp/(==)(a: type-exp, b: type-exp): div bool {
   match (a, b) {
-    (IntT, IntT) -> True
-    (ArrowT(a_params, a_return_type), ArrowT(b_params, b_return_type)) ->
+    (IdTE(a_name), IdTE(b_name)) -> a_name == b_name
+    (ArrowTE(a_params, a_return_type), ArrowTE(b_params, b_return_type)) ->
       list/(==)(a_params, b_params,
         ?(==) = fn(a_param, b_param) pretend-no-div(fn() a_param == b_param))
       && a_return_type == b_return_type
-    (AlgebraicT(a_name, a_pos), AlgebraicT(b_name, b_pos)) ->
-      a_name == b_name
-      && a_pos == b_pos
-    (_, _) -> False
+    _ -> False
   }
 }
 
-pub fun toy-type/show(a: toy-type): div string {
+pub fun type-exp/show(a: type-exp): div string {
   match a {
-    IntT -> "IntT()"
-    ArrowT(params, return_type) -> "ArrowT(" ++ params.show ++ ", " ++ return_type.show ++ ")"
-    AlgebraicT(name, pos) -> "AlgebraicT(" ++ name ++ ", " ++ pos.show ++ ")"
+    IdTE(name) -> "IdTE(" ++ name ++ ")"
+    ArrowTE(params, return_type) -> "ArrowTE(" ++ params.show ++ ", " ++ return_type.show ++ ")"
   }
 }
 
 pub value struct declaration {
   name: string
-  type_tag: toy-type
+  type_tag: type-exp
 }
 
 pub fun declaration/(==)(a: declaration, b: declaration): div bool {
@@ -203,20 +198,20 @@ fun p_option_separator(): ast<token_with_pos> token_with_pos -> p_eq(OptionSepar
 fun p_match_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("match")
 fun p_colon(): ast<token_with_pos> token_with_pos -> p_eq(ColonToken)
 
-fun p_int_type(): ast<token_with_pos> toy-type -> {
-  p_keyword("int")
-  IntT
+fun p_id_type(): ast<token_with_pos> type-exp {
+  IdTE(p_word().fst)
 }
-fun p_arrow_type(): ast<token_with_pos> toy-type -> {
+
+fun p_arrow_type(): ast<token_with_pos> type-exp {
   p_open_paren()
   val params = p-sep-by("parameter type list", p_type, p_list_separator)
   p_close_paren()
   p_arrow()
   val return_type = p_type()
-  ArrowT(params, return_type)
+  ArrowTE(params, return_type)
 }
 
-fun p_type(): ast<token_with_pos> toy-type {// by doing a peek first, we can get better error messages
+fun p_type(): ast<token_with_pos> type-exp { // by doing a peek first, we can get better error messages
   val first_token_with_pos = match ppeek() {
     Just(tok) -> tok
     Nothing -> astError("Expected type")
@@ -224,7 +219,7 @@ fun p_type(): ast<token_with_pos> toy-type {// by doing a peek first, we can get
   val first_token = first_token_with_pos.token
   match first_token {
     OpenParenToken -> p_arrow_type()
-    _ -> p_int_type()
+    _ -> p_id_type()
   }
 }
 
@@ -438,6 +433,7 @@ fun exp_eq_excluding_pos(a: exp, b: exp): div bool {
 
 pub fun test() {
   val p = Pos(0, 0) // dummy pos
+  val intT = IdTE("int")
 
   // check([WordToken("blah"), PeriodToken, OpenBraceToken, IntToken(12), CloseBraceToken, OpenParenToken, CloseParenToken, ColonToken])
   //   tokenize("blah.\n; {12} ():")
@@ -455,14 +451,14 @@ pub fun test() {
     parse_exp(tokenize("{{1; 2}; 3; 4}")).exp
   // check([WordToken("fn"), OpenParenToken, WordToken("x"), CloseParenToken, ColonToken, IntToken(1)])
   //   tokenize("fn(x): 1")
-  check(FnE([Declaration("x", IntT)], Exp_With_Pos(IntE(1), p, p)), ?(==) = exp_eq_excluding_pos)
+  check(FnE([Declaration("x", intT)], Exp_With_Pos(IntE(1), p, p)), ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("fn(x: int) 1")).exp
-  check(FnE([Declaration("x", IntT)], Exp_With_Pos(BlockE(
+  check(FnE([Declaration("x", intT)], Exp_With_Pos(BlockE(
         NECons(Exp_With_Pos(IntE(1), p, p),
         NELast(Exp_With_Pos(IntE(2), p, p)))), p, p)),
       ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("fn(x: int) { 1; 2 }")).exp
-  check(FnE([Declaration("x", IntT)], Exp_With_Pos(IdE("x"), p, p)), ?(==) = exp_eq_excluding_pos)
+  check(FnE([Declaration("x", intT)], Exp_With_Pos(IdE("x"), p, p)), ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("fn(x: int) x")).exp
   check(AppE(
         Exp_With_Pos(IntE(1), p, p),
@@ -470,12 +466,12 @@ pub fun test() {
       ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("1(2)")).exp
   check(AppE(
-        Exp_With_Pos(FnE([Declaration("x", IntT)],
+        Exp_With_Pos(FnE([Declaration("x", intT)],
           Exp_With_Pos(IdE("x"), p, p)), p, p),
         [Exp_With_Pos(IntE(1), p, p)]),
       ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("(fn(x: int) x)(1)")).exp
-  check(DefE("recur", [Declaration("x", IntT)], IntT,
+  check(DefE("recur", [Declaration("x", intT)], intT,
         Exp_With_Pos(AppE(
           Exp_With_Pos(IdE("recur"), p, p),
           [Exp_With_Pos(IdE("x"), p, p)]), p, p)),

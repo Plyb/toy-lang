@@ -226,4 +226,15 @@ pub fun test()
         pair(x, y) x
       }
     }".run
+  check(IntV(1))
+    r"{
+      type pair
+        pair(fst: int, snd: int);
+      def getFirst(thePair: pair): int = {
+        match thePair {
+          pair(x, y) x
+        }
+      };
+      getFirst(pair(1, 2))
+    }".run
   
