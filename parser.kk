@@ -186,7 +186,7 @@ fun p_word(): ast<token_with_pos> (string, pos, pos) {
 
 fun p_open_brace(): ast<token_with_pos> token_with_pos -> p_eq(OpenBraceToken)
 fun p_close_brace(): ast<token_with_pos> token_with_pos -> p_eq(CloseBraceToken)
-fun p_period(): ast<token_with_pos> token_with_pos -> p_eq(PeriodToken)
+fun p_line_separator(): ast<token_with_pos> token_with_pos -> p_eq(LineSeparatorToken)
 fun p_open_paren(): ast<token_with_pos> token_with_pos -> p_eq(OpenParenToken)
 fun p_close_paren(): ast<token_with_pos> token_with_pos -> p_eq(CloseParenToken)
 fun p_colon(): ast<token_with_pos> token_with_pos -> p_eq(ColonToken)
@@ -248,7 +248,7 @@ fun p_int(): <ast<token_with_pos>> exp_with_pos ->
 fun p_block(): <ast<token_with_pos>> exp_with_pos {
   val start = p_open_brace().start
   val lines_with_poses = assert-non-empty(
-    p-sep-by1("block sub-expression", p_exp, p_period)
+    p-sep-by1("block sub-expression", p_exp, p_line_separator)
   )
   val end = p_close_brace().end
   Exp_With_Pos(BlockE(lines_with_poses), start, end)

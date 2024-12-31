@@ -215,7 +215,7 @@ fun main()
     NECons(Exp_With_Pos(IntE(3), Pos(0,9), Pos(0,10)),
     NELast(Exp_With_Pos(IntE(4), Pos(0,12), Pos(0,13))
   )))))
-    parse_exp(tokenize("{{1. 2}. 3. 4}")).exp
+    parse_exp(tokenize("{{1; 2}; 3; 4}")).exp
   // check([WordToken("fn"), OpenParenToken, WordToken("x"), CloseParenToken, ColonToken, IntToken(1)])
   //   tokenize("fn(x): 1")
   check(FnE([Declaration("x", IntT)], Exp_With_Pos(IntE(1), Pos(0,12), Pos(0,13))))
@@ -223,7 +223,7 @@ fun main()
   check(FnE([Declaration("x", IntT)], Exp_With_Pos(BlockE(
       NECons(Exp_With_Pos(IntE(1), Pos(0,14), Pos(0,15)),
       NELast(Exp_With_Pos(IntE(2), Pos(0,17), Pos(0,18))))), Pos(0,12), Pos(0,20))))
-    parse_exp(tokenize("fn(x: int): { 1. 2 }")).exp
+    parse_exp(tokenize("fn(x: int): { 1; 2 }")).exp
   check(FnE([Declaration("x", IntT)], Exp_With_Pos(IdE("x"), Pos(0,12), Pos(0,13))))
     parse_exp(tokenize("fn(x: int): x")).exp
   check(AppE(
@@ -238,28 +238,28 @@ fun main()
   check(IntV(42))
     "(fn(x: int): x)(42)".run
   check(IntV(42))
-    "{ val x: int = 42. val y: int = x. y }".run
+    "{ val x: int = 42; val y: int = x; y }".run
   check(IntV(42))
-    "{ val x: int = (fn(x: int): x)(42). x }".run
+    "{ val x: int = (fn(x: int): x)(42); x }".run
   check(DefE("recur", [Declaration("x", IntT)], IntT,
       Exp_With_Pos(AppE(
         Exp_With_Pos(IdE("recur"), Pos(0,23), Pos(0,28)),
         [Exp_With_Pos(IdE("x"), Pos(0,29), Pos(0,30))]), Pos(0,23), Pos(0,31))))
     "def recur(x: int): int recur(x)".tokenize.parse_exp.exp
   check(IntV(42))
-    "{ def g(x: int): int f(x). def f(x: int): int x. g(42) }".run
+    "{ def g(x: int): int f(x); def f(x: int): int x; g(42) }".run
   check(IntV(42))
     "(fn(x: int): fn(): x)(42)()".run
   check(IntV(1))
     "(fn(x: int, y: int): x)(1, 2)".run
   check(IntV(42))
     r"{
-      def true(x: int, y: int): int x.
-      def false(x: int, y: int): int y.
-      def if(cond: (int, int) -> int, then: () -> int, else:  () -> int): int cond(then(), else()).
+      def true(x: int, y: int): int x;
+      def false(x: int, y: int): int y;
+      def if(cond: (int, int) -> int, then: () -> int, else:  () -> int): int cond(then(), else());
 
-      val whatWeWant: int = 42.
-      val dontReturnThis: int = 0.
+      val whatWeWant: int = 42;
+      val dontReturnThis: int = 0;
 
       if(true,
         fn(): whatWeWant,
@@ -269,7 +269,7 @@ fun main()
   check(IntV(1))
     r"{
       type myType
-        pair(fst: int, snd: int).
+        pair(fst: int, snd: int);
       match pair(1, 2) {
         pair(x, y) x
       }
