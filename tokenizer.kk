@@ -17,11 +17,11 @@ value type token {
   LineSeparatorToken
   OpenParenToken
   CloseParenToken
-  ColonToken
-  EqToken
+  AssignmentOperatorToken
   ListSeparatorToken
   ArrowToken
   OptionSeparatorToken
+  ColonToken
 }
 
 fun token/(==)(a: token, b: token): bool {
@@ -33,11 +33,11 @@ fun token/(==)(a: token, b: token): bool {
     (LineSeparatorToken, LineSeparatorToken) -> True
     (OpenParenToken, OpenParenToken) -> True
     (CloseParenToken, CloseParenToken) -> True
-    (ColonToken, ColonToken) -> True
-    (EqToken, EqToken) -> True
+    (AssignmentOperatorToken, AssignmentOperatorToken) -> True
     (ListSeparatorToken, ListSeparatorToken) -> True
     (ArrowToken, ArrowToken) -> True
     (OptionSeparatorToken, OptionSeparatorToken) -> True
+    (ColonToken, ColonToken) -> True
     _ -> False
   }
 }
@@ -51,11 +51,11 @@ fun token/show(tok: token): string {
     LineSeparatorToken -> "LineSeparatorToken"
     OpenParenToken -> "OpenParenToken"
     CloseParenToken -> "CloseParenToken"
-    ColonToken -> "ColonToken"
-    EqToken -> "EqToken"
+    AssignmentOperatorToken -> "AssignmentOperatorToken"
     ListSeparatorToken -> "ListSeparatorToken"
     ArrowToken -> "ArrowToken"
     OptionSeparatorToken -> "OptionSeparatorToken"
+    ColonToken -> "ColonToken"
   }
 }
 
@@ -100,7 +100,7 @@ fun ensure_next_char_not_digit(): <parse> () {
   }
 }
 
-fun p_period_token(): <parse> token {
+fun p_line_separator_token(): <parse> token {
   char(';')
   ensure_next_char_not_digit()
   LineSeparatorToken
@@ -116,14 +116,9 @@ fun p_close_paren_token(): <parse> token {
   CloseParenToken
 }
 
-fun p_def_symbol_token(): <parse> token {
+fun p_assignment_operator_token(): <parse> token {
   char('=')
-  EqToken
-}
-
-fun p_colon_token(): <parse> token {
-  char(':')
-  ColonToken
+  AssignmentOperatorToken
 }
 
 fun p_list_separator_token(): <parse> token {
@@ -142,6 +137,11 @@ fun p_option_separator_token(): <parse> token {
   OptionSeparatorToken
 }
 
+fun p_colon_token(): <parse> token {
+  char(':')
+  ColonToken
+}
+
 fun p_token(): <parse, get_pos> token_with_pos {
   val start = get_pos()
   val res = TokenWithPos(
@@ -150,14 +150,14 @@ fun p_token(): <parse, get_pos> token_with_pos {
       p_int_token,
       p_open_brace_token,
       p_close_brace_token,
-      p_period_token,
+      p_line_separator_token,
       p_open_paren_token,
       p_close_paren_token,
-      p_def_symbol_token,
-      p_colon_token,
+      p_assignment_operator_token,
       p_list_separator_token,
       p_arrow_token,
       p_option_separator_token,
+      p_colon_token,
     ]), start, get_pos())
   many(whitespace)
   res

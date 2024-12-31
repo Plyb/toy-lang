@@ -1,0 +1,11 @@
+fun check(expected: a, f: () -> <console,pure|e> a, ?(==): (a, a) -> div bool, ?kk-file-line: string, ?show: a -> div string): <console,div|e> ()
+  println("Checking (" ++ kk-file-line ++ ") ...")
+  match try(f)
+    Error(e) -> println("Failed! " ++ e.message)
+    Ok(actual) -> if actual == expected then println("Passed!") else println("Failed!\n\tExpected: " ++ expected.show ++ "\n\tActual: " ++ actual.show) 
+
+fun check-exn(expected-err: string, f: () -> <console,exn|e> a, ?kk-file-line: string): <console|e> ()
+  println("Checking exception (" ++ kk-file-line ++ ") ...")
+  match try(f)
+    Error(e) -> if expected-err == e.message then println("Passed!") else println("Failed!")
+    _ -> println("Failed!")

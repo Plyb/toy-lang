@@ -1,3 +1,5 @@
+module interpreter
+
 import std/core/undiv
 import tokenizer
 import parser
@@ -6,20 +8,8 @@ import non-empty-list
 import std/data/hash
 import std/text/parse
 import typecheck
+import test-helper
 
-fun check(expected: a, f: () -> <console,pure|e> a, ?(==): (a, a) -> div bool, ?kk-file-line: string, ?show: a -> div string): <console,div|e> ()
-  println("Checking (" ++ kk-file-line ++ ") ...")
-  match try(f)
-    Error(e) -> println("Failed! " ++ e.message)
-    Ok(actual) -> if actual == expected then println("Passed!") else println("Failed!\n\tExpected: " ++ expected.show ++ "\n\tActual: " ++ actual.show) 
-
-fun check-exn(expected-err: string, f: () -> <console,exn|e> a, ?kk-file-line: string): <console|e> ()
-  println("Checking exception (" ++ kk-file-line ++ ") ...")
-  match try(f)
-    Error(e) -> if expected-err == e.message then println("Passed!") else println("Failed!")
-    _ -> println("Failed!")
-
-///////////////////// interpreter //////////////////////
 
 type toy-value {
   IntV(n: int)
@@ -201,69 +191,31 @@ fun run(prog: string): <pure, console> toy-value {
   exp.interp(thread/hash-map())
 }
 
-fun main()
-  // check([WordToken("blah"), PeriodToken, OpenBraceToken, IntToken(12), CloseBraceToken, OpenParenToken, CloseParenToken, ColonToken])
-  //   tokenize("blah.\n; {12} ():")
-  check(IntE(1))
-    parse_exp(tokenize("1")).exp
-  check(BlockE(NELast(Exp_With_Pos(IntE(1), Pos(0,1), Pos(0,2)))))
-    parse_exp(tokenize("{1}")).exp
-  check(BlockE(
-    NECons(Exp_With_Pos(BlockE(
-      NECons(Exp_With_Pos(IntE(1), Pos(0,2), Pos(0,3)),
-      NELast(Exp_With_Pos(IntE(2), Pos(0,5), Pos(0,6))))), Pos(0,1), Pos(0,7)),
-    NECons(Exp_With_Pos(IntE(3), Pos(0,9), Pos(0,10)),
-    NELast(Exp_With_Pos(IntE(4), Pos(0,12), Pos(0,13))
-  )))))
-    parse_exp(tokenize("{{1; 2}; 3; 4}")).exp
-  // check([WordToken("fn"), OpenParenToken, WordToken("x"), CloseParenToken, ColonToken, IntToken(1)])
-  //   tokenize("fn(x): 1")
-  check(FnE([Declaration("x", IntT)], Exp_With_Pos(IntE(1), Pos(0,12), Pos(0,13))))
-    parse_exp(tokenize("fn(x: int): 1")).exp
-  check(FnE([Declaration("x", IntT)], Exp_With_Pos(BlockE(
-      NECons(Exp_With_Pos(IntE(1), Pos(0,14), Pos(0,15)),
-      NELast(Exp_With_Pos(IntE(2), Pos(0,17), Pos(0,18))))), Pos(0,12), Pos(0,20))))
-    parse_exp(tokenize("fn(x: int): { 1; 2 }")).exp
-  check(FnE([Declaration("x", IntT)], Exp_With_Pos(IdE("x"), Pos(0,12), Pos(0,13))))
-    parse_exp(tokenize("fn(x: int): x")).exp
-  check(AppE(
-      Exp_With_Pos(IntE(1), Pos(0,0), Pos(0,1)),
-      [Exp_With_Pos(IntE(2), Pos(0,2), Pos(0,3))]))
-    parse_exp(tokenize("1(2)")).exp
-  check(AppE(
-    Exp_With_Pos(FnE([Declaration("x", IntT)],
-      Exp_With_Pos(IdE("x"), Pos(0,13), Pos(0,14))), Pos(0,0), Pos(0,15)),
-    [Exp_With_Pos(IntE(1), Pos(0,16), Pos(0,17))]))
-    parse_exp(tokenize("(fn(x: int): x)(1)")).exp
+pub fun test()
   check(IntV(42))
-    "(fn(x: int): x)(42)".run
+    "(fn(x: int) x)(42)".run
   check(IntV(42))
     "{ val x: int = 42; val y: int = x; y }".run
   check(IntV(42))
-    "{ val x: int = (fn(x: int): x)(42); x }".run
-  check(DefE("recur", [Declaration("x", IntT)], IntT,
-      Exp_With_Pos(AppE(
-        Exp_With_Pos(IdE("recur"), Pos(0,23), Pos(0,28)),
-        [Exp_With_Pos(IdE("x"), Pos(0,29), Pos(0,30))]), Pos(0,23), Pos(0,31))))
-    "def recur(x: int): int recur(x)".tokenize.parse_exp.exp
+    "{ val x: int = (fn(x: int) x)(42); x }".run
   check(IntV(42))
-    "{ def g(x: int): int f(x); def f(x: int): int x; g(42) }".run
+    "{ def g(x: int): int = f(x); def f(x: int): int = x; g(42) }".run
   check(IntV(42))
-    "(fn(x: int): fn(): x)(42)()".run
+    "(fn(x: int) fn() x)(42)()".run
   check(IntV(1))
-    "(fn(x: int, y: int): x)(1, 2)".run
+    "(fn(x: int, y: int) x)(1, 2)".run
   check(IntV(42))
     r"{
-      def true(x: int, y: int): int x;
-      def false(x: int, y: int): int y;
-      def if(cond: (int, int) -> int, then: () -> int, else:  () -> int): int cond(then(), else());
+      def true(x: int, y: int): int = x;
+      def false(x: int, y: int): int = y;
+      def if(cond: (int, int) -> int, then: () -> int, else: () -> int): int = cond(then(), else());
 
       val whatWeWant: int = 42;
       val dontReturnThis: int = 0;
 
       if(true,
-        fn(): whatWeWant,
-        fn(): dontReturnThis
+        fn() whatWeWant,
+        fn() dontReturnThis
       )
     }".run
   check(IntV(1))

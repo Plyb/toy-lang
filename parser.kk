@@ -1,10 +1,13 @@
+module parser
+
 import ast-simple
 import std/text/parse
 import tokenizer
 import std/core/undiv
 import non-empty-list
+import test-helper
 
-type exp {
+pub type exp {
   IntE(n: int)
   BlockE(exps: non-empty-list<exp_with_pos>)
   FnE(params: list<declaration>, body: exp_with_pos)
@@ -16,7 +19,7 @@ type exp {
   MatchE(discriminee: exp_with_pos, cases: non-empty-list<case>)
 }
 
-fun exp/(==)(a: exp, b: exp): div bool {
+pub fun exp/(==)(a: exp, b: exp): div bool {
   match (a, b) {
     (IntE(a_num), IntE(b_num)) -> a_num == b_num
     (BlockE(a_exps), BlockE(b_exps)) -> a_exps == b_exps
@@ -48,7 +51,7 @@ fun exp/(==)(a: exp, b: exp): div bool {
   }
 }
 
-fun exp/show(exp: exp): div string {
+pub fun exp/show(exp: exp): div string {
   match exp {
     IntE(n) -> "IntE(" ++ n.show ++ ")"
     BlockE(exps) -> "BlockE(" ++ exps.non-empty-list/show(?show = fn(sub_exp) pretend-no-div(fn() sub_exp.show)) ++ ")"
@@ -62,29 +65,29 @@ fun exp/show(exp: exp): div string {
   }
 }
 
-struct exp_with_pos {
+pub struct exp_with_pos {
   exp: exp
   start: pos
   end: pos
 }
 
-fun exp_with_pos/(==)(a: exp_with_pos, b: exp_with_pos): div bool {
+pub fun exp_with_pos/(==)(a: exp_with_pos, b: exp_with_pos): div bool {
   a.exp == b.exp
   && a.start == b.start
   && a.end == b.end
 }
 
-fun exp_with_pos/show(a: exp_with_pos): div string {
+pub fun exp_with_pos/show(a: exp_with_pos): div string {
   a.exp.show ++ " @ " ++ a.start.show ++ "-" ++ a.end.show
 }
 
-type toy-type {
+pub type toy-type {
   IntT
   ArrowT(params: list<toy-type>, return_type: toy-type)
   AlgebraicT(name: string, pos: pos) // pos used for disambiguation
 }
 
-fun toy-type/(==)(a: toy-type, b: toy-type): div bool {
+pub fun toy-type/(==)(a: toy-type, b: toy-type): div bool {
   match (a, b) {
     (IntT, IntT) -> True
     (ArrowT(a_params, a_return_type), ArrowT(b_params, b_return_type)) ->
@@ -98,7 +101,7 @@ fun toy-type/(==)(a: toy-type, b: toy-type): div bool {
   }
 }
 
-fun toy-type/show(a: toy-type): div string {
+pub fun toy-type/show(a: toy-type): div string {
   match a {
     IntT -> "IntT()"
     ArrowT(params, return_type) -> "ArrowT(" ++ params.show ++ ", " ++ return_type.show ++ ")"
@@ -106,45 +109,45 @@ fun toy-type/show(a: toy-type): div string {
   }
 }
 
-value struct declaration {
+pub value struct declaration {
   name: string
   type_tag: toy-type
 }
 
-fun declaration/(==)(a: declaration, b: declaration): div bool {
+pub fun declaration/(==)(a: declaration, b: declaration): div bool {
   a.name == b.name && a.type_tag == b.type_tag
 }
 
-fun declaration/show(a: declaration): div string {
+pub fun declaration/show(a: declaration): div string {
   "Declaration(" ++ a.name ++ ", " ++ a.type_tag.show ++ ")"
 }
 
-value struct constructor_def {
+pub value struct constructor_def {
   name: string
   params: list<declaration>
 }
 
-fun constructor_def/(==)(a: constructor_def, b: constructor_def): bool {
+pub fun constructor_def/(==)(a: constructor_def, b: constructor_def): bool {
   a.name == b.name && list/(==)(a.params, b.params, ?(==) = fn(a_param, b_param) pretend-no-div(fn() a_param == b_param))
 }
 
-fun constructor_def/show(a: constructor_def): div string {
+pub fun constructor_def/show(a: constructor_def): div string {
   "Constructor_Def(" ++ a.name ++ ", " ++ a.params.show ++ ")"
 }
 
-struct case {
+pub struct case {
   constructor_name: string
   params: list<string>
   body: exp_with_pos
 }
 
-fun case/(==)(a: case, b: case): div bool {
+pub fun case/(==)(a: case, b: case): div bool {
   a.constructor_name == b.constructor_name
   && a.params == b.params
   && a.body == b.body
 }
 
-fun case/show(a: case): div string {
+pub fun case/show(a: case): div string {
   "Case(" ++ a.constructor_name ++ ", " ++ a.params.show ++ ", " ++ a.body.show ++ ")"
 }
 
@@ -189,9 +192,8 @@ fun p_close_brace(): ast<token_with_pos> token_with_pos -> p_eq(CloseBraceToken)
 fun p_line_separator(): ast<token_with_pos> token_with_pos -> p_eq(LineSeparatorToken)
 fun p_open_paren(): ast<token_with_pos> token_with_pos -> p_eq(OpenParenToken)
 fun p_close_paren(): ast<token_with_pos> token_with_pos -> p_eq(CloseParenToken)
-fun p_colon(): ast<token_with_pos> token_with_pos -> p_eq(ColonToken)
 fun p_fn_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("fn")
-fun p_eq_token(): ast<token_with_pos> token_with_pos -> p_eq(EqToken)
+fun p_assignment_operator(): ast<token_with_pos> token_with_pos -> p_eq(AssignmentOperatorToken)
 fun p_val_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("val")
 fun p_def_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("def")
 fun p_list_separator(): ast<token_with_pos> token_with_pos -> p_eq(ListSeparatorToken)
@@ -199,6 +201,7 @@ fun p_arrow(): ast<token_with_pos> token_with_pos -> p_eq(ArrowToken)
 fun p_typedef_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("type")
 fun p_option_separator(): ast<token_with_pos> token_with_pos -> p_eq(OptionSeparatorToken)
 fun p_match_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("match")
+fun p_colon(): ast<token_with_pos> token_with_pos -> p_eq(ColonToken)
 
 fun p_int_type(): ast<token_with_pos> toy-type -> {
   p_keyword("int")
@@ -259,7 +262,6 @@ fun p_fn(): <ast<token_with_pos>> exp_with_pos {
   p_open_paren()
   val params = p_param_list()
   p_close_paren()
-  p_colon()
   val body = p_exp()
   Exp_With_Pos(FnE(params, body), start, body.end)
 }
@@ -279,7 +281,7 @@ fun p_id(): <ast<token_with_pos>> exp_with_pos {
 fun p_val(): <ast<token_with_pos>> exp_with_pos {
   val start = p_val_keyword().start
   val lhs = p_delcaration()
-  p_eq_token()
+  p_assignment_operator()
   val rhs = p_exp()
   Exp_With_Pos(ValE(lhs, rhs), start, rhs.end)
 }
@@ -292,6 +294,7 @@ fun p_def(): <ast<token_with_pos>> exp_with_pos {
   p_close_paren()
   p_colon()
   val return_type = p_type()
+  p_assignment_operator()
   val body = p_exp()
   Exp_With_Pos(
     DefE(name, params, return_type, body),
@@ -389,7 +392,93 @@ fun p_program(): <ast<token_with_pos>> exp_with_pos {
   program
 }
 
-fun parse_exp(tokens: list<token_with_pos>): <pure> exp_with_pos
+pub fun parse_exp(tokens: list<token_with_pos>): <pure> exp_with_pos
   with final ctl astError(msg)
     throw(msg)
   parseLexemes(tokens, p_program)
+
+///////////////// tests //////////////////
+
+fun exp_eq_excluding_pos(a: exp, b: exp): div bool {
+  match (a, b) {
+    (IntE(a_num), IntE(b_num)) -> a_num == b_num
+    (BlockE(a_exps), BlockE(b_exps)) -> (==)(
+      a_exps.map(fn(a_exp_with_pos) a_exp_with_pos.exp),
+      b_exps.map(fn(b_exp_with_pos) b_exp_with_pos.exp),
+      ?(==) = exp_eq_excluding_pos
+    )
+    (FnE(a_params, a_body), FnE(b_params, b_body)) ->
+      (==)(a_params, b_params, ?(==) = fn(a_param, b_param) pretend-no-div(fn() a_param == b_param))
+      && exp_eq_excluding_pos(a_body.exp, b_body.exp)
+    (IdE(a_name), IdE(b_name)) -> a_name == b_name
+    (AppE(a_operator, a_operands), AppE(b_operator, b_operands)) ->
+      exp_eq_excluding_pos(a_operator.exp, b_operator.exp)
+      && list/(==)(a_operands, b_operands,
+        ?(==) = fn(a_operand, b_operand) pretend-no-div(fn() exp_eq_excluding_pos(a_operand.exp, b_operand.exp)))
+    (ValE(a_name, a_right_hand_side), ValE(b_name, b_right_hand_side)) ->
+      a_name == b_name
+      && exp_eq_excluding_pos(a_right_hand_side.exp, b_right_hand_side.exp)
+    (DefE(a_name, a_params, _, a_body), DefE(b_name, b_params, _, b_body)) ->
+      a_name == b_name
+      && (==)(a_params, b_params, ?(==) = fn(a_param, b_param) pretend-no-div(fn() a_param == b_param))
+      && exp_eq_excluding_pos(a_body.exp, b_body.exp)
+    (TypeDefE(a_name, a_options), TypeDefE(b_name, b_options)) ->
+      a_name == b_name
+      && a_options == b_options
+    (MatchE(a_discriminee, a_cases), MatchE(b_discriminee, b_cases)) ->
+      exp_eq_excluding_pos(a_discriminee.exp, b_discriminee.exp)
+      && non-empty-list/(==)(a_cases, b_cases, ?(==) = fn(a_case, b_case) pretend-no-div(fn()
+        a_case.constructor_name == b_case.constructor_name
+        && a_case.params == b_case.params
+        && exp_eq_excluding_pos(a_case.body.exp, b_case.body.exp)
+      ))
+    _ -> False
+  }
+}
+
+pub fun test() {
+  val p = Pos(0, 0) // dummy pos
+
+  // check([WordToken("blah"), PeriodToken, OpenBraceToken, IntToken(12), CloseBraceToken, OpenParenToken, CloseParenToken, ColonToken])
+  //   tokenize("blah.\n; {12} ():")
+  check(IntE(1), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("1")).exp
+  check(BlockE(NELast(Exp_With_Pos(IntE(1), p, p))), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("{1}")).exp
+  check(BlockE(
+    NECons(Exp_With_Pos(BlockE(
+      NECons(Exp_With_Pos(IntE(1), p, p),
+      NELast(Exp_With_Pos(IntE(2), p, p)))), p, p),
+    NECons(Exp_With_Pos(IntE(3), p, p),
+    NELast(Exp_With_Pos(IntE(4), p, p)
+  )))), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("{{1; 2}; 3; 4}")).exp
+  // check([WordToken("fn"), OpenParenToken, WordToken("x"), CloseParenToken, ColonToken, IntToken(1)])
+  //   tokenize("fn(x): 1")
+  check(FnE([Declaration("x", IntT)], Exp_With_Pos(IntE(1), p, p)), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("fn(x: int) 1")).exp
+  check(FnE([Declaration("x", IntT)], Exp_With_Pos(BlockE(
+        NECons(Exp_With_Pos(IntE(1), p, p),
+        NELast(Exp_With_Pos(IntE(2), p, p)))), p, p)),
+      ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("fn(x: int) { 1; 2 }")).exp
+  check(FnE([Declaration("x", IntT)], Exp_With_Pos(IdE("x"), p, p)), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("fn(x: int) x")).exp
+  check(AppE(
+        Exp_With_Pos(IntE(1), p, p),
+        [Exp_With_Pos(IntE(2), p, p)]),
+      ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("1(2)")).exp
+  check(AppE(
+        Exp_With_Pos(FnE([Declaration("x", IntT)],
+          Exp_With_Pos(IdE("x"), p, p)), p, p),
+        [Exp_With_Pos(IntE(1), p, p)]),
+      ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("(fn(x: int) x)(1)")).exp
+  check(DefE("recur", [Declaration("x", IntT)], IntT,
+        Exp_With_Pos(AppE(
+          Exp_With_Pos(IdE("recur"), p, p),
+          [Exp_With_Pos(IdE("x"), p, p)]), p, p)),
+      ?(==) = exp_eq_excluding_pos)
+    "def recur(x: int): int = recur(x)".tokenize.parse_exp.exp
+}
