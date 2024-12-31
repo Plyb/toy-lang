@@ -1,10 +1,13 @@
+module parser
+
 import ast-simple
 import std/text/parse
 import tokenizer
 import std/core/undiv
 import non-empty-list
+import test-helper
 
-type exp {
+pub type exp {
   IntE(n: int)
   BlockE(exps: non-empty-list<exp_with_pos>)
   FnE(params: list<string>, body: exp_with_pos)
@@ -16,7 +19,7 @@ type exp {
   MatchE(discriminee: exp_with_pos, cases: non-empty-list<case>)
 }
 
-fun exp/(==)(a: exp, b: exp): div bool {
+pub fun exp/(==)(a: exp, b: exp): div bool {
   match (a, b) {
     (IntE(a_num), IntE(b_num)) -> a_num == b_num
     (BlockE(a_exps), BlockE(b_exps)) -> a_exps == b_exps
@@ -43,7 +46,7 @@ fun exp/(==)(a: exp, b: exp): div bool {
   }
 }
 
-fun exp/show(exp: exp): div string {
+pub fun exp/show(exp: exp): div string {
   match exp {
     IntE(n) -> "IntE(" ++ n.show ++ ")"
     BlockE(exps) -> "BlockE(" ++ exps.non-empty-list/show(?show = fn(sub_exp) pretend-no-div(fn() sub_exp.show)) ++ ")"
@@ -57,48 +60,48 @@ fun exp/show(exp: exp): div string {
   }
 }
 
-struct exp_with_pos {
+pub struct exp_with_pos {
   exp: exp
   start: pos
   end: pos
 }
 
-fun exp_with_pos/(==)(a: exp_with_pos, b: exp_with_pos): div bool {
+pub fun exp_with_pos/(==)(a: exp_with_pos, b: exp_with_pos): div bool {
   a.exp == b.exp
   && a.start == b.start
   && a.end == b.end
 }
 
-fun exp_with_pos/show(a: exp_with_pos): div string {
+pub fun exp_with_pos/show(a: exp_with_pos): div string {
   a.exp.show ++ " @ " ++ a.start.show ++ "-" ++ a.end.show
 }
 
-value struct constructor_def {
+pub value struct constructor_def {
   name: string
   params: list<string>
 }
 
-fun constructor_def/(==)(a: constructor_def, b: constructor_def): bool {
+pub fun constructor_def/(==)(a: constructor_def, b: constructor_def): bool {
   a.name == b.name && a.params == b.params
 }
 
-fun constructor_def/show(a: constructor_def): string {
+pub fun constructor_def/show(a: constructor_def): string {
   "Constructor_Def(" ++ a.name ++ ", " ++ a.params.show ++ ")"
 }
 
-struct case {
+pub struct case {
   constructor_name: string
   params: list<string>
   body: exp_with_pos
 }
 
-fun case/(==)(a: case, b: case): div bool {
+pub fun case/(==)(a: case, b: case): div bool {
   a.constructor_name == b.constructor_name
   && a.params == b.params
   && a.body == b.body
 }
 
-fun case/show(a: case): div string {
+pub fun case/show(a: case): div string {
   "Case(" ++ a.constructor_name ++ ", " ++ a.params.show ++ ", " ++ a.body.show ++ ")"
 }
 
@@ -307,7 +310,91 @@ fun p_program(): <ast<token_with_pos>> exp_with_pos {
   program
 }
 
-fun parse_exp(tokens: list<token_with_pos>): <pure> exp_with_pos
+pub fun parse_exp(tokens: list<token_with_pos>): <pure> exp_with_pos
   with final ctl astError(msg)
     throw(msg)
   parseLexemes(tokens, p_program)
+
+///////////////// tests //////////////////
+
+fun exp_eq_excluding_pos(a: exp, b: exp): div bool {
+  match (a, b) {
+    (IntE(a_num), IntE(b_num)) -> a_num == b_num
+    (BlockE(a_exps), BlockE(b_exps)) -> (==)(
+      a_exps.map(fn(a_exp_with_pos) a_exp_with_pos.exp),
+      b_exps.map(fn(b_exp_with_pos) b_exp_with_pos.exp),
+      ?(==) = exp_eq_excluding_pos
+    )
+    (FnE(a_params, a_body), FnE(b_params, b_body)) -> a_params == b_params && exp_eq_excluding_pos(a_body.exp, b_body.exp)
+    (IdE(a_name), IdE(b_name)) -> a_name == b_name
+    (AppE(a_operator, a_operands), AppE(b_operator, b_operands)) ->
+      exp_eq_excluding_pos(a_operator.exp, b_operator.exp)
+      && list/(==)(a_operands, b_operands,
+        ?(==) = fn(a_operand, b_operand) pretend-no-div(fn() exp_eq_excluding_pos(a_operand.exp, b_operand.exp)))
+    (ValE(a_name, a_right_hand_side), ValE(b_name, b_right_hand_side)) ->
+      a_name == b_name
+      && exp_eq_excluding_pos(a_right_hand_side.exp, b_right_hand_side.exp)
+    (DefE(a_name, a_params, a_body), DefE(b_name, b_params, b_body)) ->
+      a_name == b_name
+      && a_params == b_params
+      && exp_eq_excluding_pos(a_body.exp, b_body.exp)
+    (TypeDefE(a_name, a_options), TypeDefE(b_name, b_options)) ->
+      a_name == b_name
+      && a_options == b_options
+    (MatchE(a_discriminee, a_cases), MatchE(b_discriminee, b_cases)) ->
+      exp_eq_excluding_pos(a_discriminee.exp, b_discriminee.exp)
+      && non-empty-list/(==)(a_cases, b_cases, ?(==) = fn(a_case, b_case) pretend-no-div(fn()
+        a_case.constructor_name == b_case.constructor_name
+        && a_case.params == b_case.params
+        && exp_eq_excluding_pos(a_case.body.exp, b_case.body.exp)
+      ))
+    _ -> False
+  }
+}
+
+pub fun test() {
+  val p = Pos(0, 0) // dummy pos
+
+  // check([WordToken("blah"), PeriodToken, OpenBraceToken, IntToken(12), CloseBraceToken, OpenParenToken, CloseParenToken, ColonToken])
+  //   tokenize("blah.\n; {12} ():")
+  check(IntE(1), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("1")).exp
+  check(BlockE(NELast(Exp_With_Pos(IntE(1), p, p))), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("{1}")).exp
+  check(BlockE(
+    NECons(Exp_With_Pos(BlockE(
+      NECons(Exp_With_Pos(IntE(1), p, p),
+      NELast(Exp_With_Pos(IntE(2), p, p)))), p, p),
+    NECons(Exp_With_Pos(IntE(3), p, p),
+    NELast(Exp_With_Pos(IntE(4), p, p)
+  )))), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("{{1; 2}; 3; 4}")).exp
+  // check([WordToken("fn"), OpenParenToken, WordToken("x"), CloseParenToken, ColonToken, IntToken(1)])
+  //   tokenize("fn(x): 1")
+  check(FnE(["x"], Exp_With_Pos(IntE(1), p, p)), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("fn(x) 1")).exp
+  check(FnE(["x"], Exp_With_Pos(BlockE(
+        NECons(Exp_With_Pos(IntE(1), p, p),
+        NELast(Exp_With_Pos(IntE(2), p, p)))), p, p)),
+      ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("fn(x) { 1; 2 }")).exp
+  check(FnE(["x"], Exp_With_Pos(IdE("x"), p, p)), ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("fn(x) x")).exp
+  check(AppE(
+        Exp_With_Pos(IntE(1), p, p),
+        [Exp_With_Pos(IntE(2), p, p)]),
+      ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("1(2)")).exp
+  check(AppE(
+        Exp_With_Pos(FnE(["x"],
+          Exp_With_Pos(IdE("x"), p, p)), p, p),
+        [Exp_With_Pos(IntE(1), p, p)]),
+      ?(==) = exp_eq_excluding_pos)
+    parse_exp(tokenize("(fn(x) x)(1)")).exp
+  check(DefE("recur", ["x"],
+        Exp_With_Pos(AppE(
+          Exp_With_Pos(IdE("recur"), p, p),
+          [Exp_With_Pos(IdE("x"), p, p)]), p, p)),
+      ?(==) = exp_eq_excluding_pos)
+    "def recur(x) = recur(x)".tokenize.parse_exp.exp
+}
