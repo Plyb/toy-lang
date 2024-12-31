@@ -220,16 +220,18 @@ pub fun test()
     }".run
   check(IntV(1))
     r"{
-      type myType
-        pair(fst: int, snd: int);
+      type myType {
+        pair(fst: int, snd: int)
+      };
       match pair(1, 2) {
         pair(x, y) x
       }
     }".run
   check(IntV(1))
     r"{
-      type pair
-        pair(fst: int, snd: int);
+      type pair {
+        pair(fst: int, snd: int)
+      };
       def getFirst(thePair: pair): int = {
         match thePair {
           pair(x, y) x

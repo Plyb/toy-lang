@@ -309,9 +309,11 @@ fun p_constructor_def(): <ast<token_with_pos>> (constructor_def, pos) {
 fun p_typedef(): <ast<token_with_pos>> exp_with_pos {
   val start = p_typedef_keyword().start
   val (name, _, _) = p_word()
+  p_open_brace()
   val constructors_with_ends = assert-non-empty(
     p-sep-by1("options list", p_constructor_def, p_option_separator)
   )
+  p_close_brace()
   val constructors = constructors_with_ends.map(fst)
   val end = constructors_with_ends.last.snd
   Exp_With_Pos(TypeDefE(name, constructors), start, end)
