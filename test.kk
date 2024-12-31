@@ -5,3 +5,5 @@ fun test() {
   parser/test()
   interpreter/test()
 }
+
+fun main() test/test()
