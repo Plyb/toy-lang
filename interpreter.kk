@@ -5,20 +5,7 @@ import std/data/hashmap
 import non-empty-list
 import std/data/hash
 import std/text/parse
-
-fun check(expected: a, f: () -> <console,pure|e> a, ?(==): (a, a) -> div bool, ?kk-file-line: string, ?show: a -> div string): <console,div|e> ()
-  println("Checking (" ++ kk-file-line ++ ") ...")
-  match try(f)
-    Error(e) -> println("Failed! " ++ e.message)
-    Ok(actual) -> if actual == expected then println("Passed!") else println("Failed!\n\tExpected: " ++ expected.show ++ "\n\tActual: " ++ actual.show) 
-
-fun check-exn(expected-err: string, f: () -> <console,exn|e> a, ?kk-file-line: string): <console|e> ()
-  println("Checking exception (" ++ kk-file-line ++ ") ...")
-  match try(f)
-    Error(e) -> if expected-err == e.message then println("Passed!") else println("Failed!")
-    _ -> println("Failed!")
-
-///////////////////// interpreter //////////////////////
+import test-helper
 
 type toy-value {
   IntV(n: int)
@@ -197,39 +184,79 @@ fun run(prog: string): <pure, console> toy-value {
   prog.tokenize.parse_exp.interp(thread/hash-map())
 }
 
+fun exp_eq_excluding_pos(a: exp, b: exp): div bool {
+  match (a, b) {
+    (IntE(a_num), IntE(b_num)) -> a_num == b_num
+    (BlockE(a_exps), BlockE(b_exps)) -> (==)(
+      a_exps.map(fn(a_exp_with_pos) a_exp_with_pos.exp),
+      b_exps.map(fn(b_exp_with_pos) b_exp_with_pos.exp),
+      ?(==) = exp_eq_excluding_pos
+    )
+    (FnE(a_params, a_body), FnE(b_params, b_body)) -> a_params == b_params && exp_eq_excluding_pos(a_body.exp, b_body.exp)
+    (IdE(a_name), IdE(b_name)) -> a_name == b_name
+    (AppE(a_operator, a_operands), AppE(b_operator, b_operands)) ->
+      exp_eq_excluding_pos(a_operator.exp, b_operator.exp)
+      && list/(==)(a_operands, b_operands,
+        ?(==) = fn(a_operand, b_operand) pretend-no-div(fn() exp_eq_excluding_pos(a_operand.exp, b_operand.exp)))
+    (ValE(a_name, a_right_hand_side), ValE(b_name, b_right_hand_side)) ->
+      a_name == b_name
+      && exp_eq_excluding_pos(a_right_hand_side.exp, b_right_hand_side.exp)
+    (DefE(a_name, a_params, a_body), DefE(b_name, b_params, b_body)) ->
+      a_name == b_name
+      && a_params == b_params
+      && exp_eq_excluding_pos(a_body.exp, b_body.exp)
+    (TypeDefE(a_name, a_options), TypeDefE(b_name, b_options)) ->
+      a_name == b_name
+      && a_options == b_options
+    (MatchE(a_discriminee, a_cases), MatchE(b_discriminee, b_cases)) ->
+      exp_eq_excluding_pos(a_discriminee.exp, b_discriminee.exp)
+      && non-empty-list/(==)(a_cases, b_cases, ?(==) = fn(a_case, b_case) pretend-no-div(fn()
+        a_case.constructor_name == b_case.constructor_name
+        && a_case.params == b_case.params
+        && exp_eq_excluding_pos(a_case.body.exp, b_case.body.exp)
+      ))
+    _ -> False
+  }
+}
+
 fun main()
+  val p = Pos(0, 0) // dummy pos
+
   // check([WordToken("blah"), PeriodToken, OpenBraceToken, IntToken(12), CloseBraceToken, OpenParenToken, CloseParenToken, ColonToken])
   //   tokenize("blah.\n; {12} ():")
-  check(IntE(1))
+  check(IntE(1), ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("1")).exp
-  check(BlockE(NELast(Exp_With_Pos(IntE(1), Pos(0,1), Pos(0,2)))))
+  check(BlockE(NELast(Exp_With_Pos(IntE(1), p, p))), ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("{1}")).exp
   check(BlockE(
     NECons(Exp_With_Pos(BlockE(
-      NECons(Exp_With_Pos(IntE(1), Pos(0,2), Pos(0,3)),
-      NELast(Exp_With_Pos(IntE(2), Pos(0,5), Pos(0,6))))), Pos(0,1), Pos(0,7)),
-    NECons(Exp_With_Pos(IntE(3), Pos(0,9), Pos(0,10)),
-    NELast(Exp_With_Pos(IntE(4), Pos(0,12), Pos(0,13))
-  )))))
+      NECons(Exp_With_Pos(IntE(1), p, p),
+      NELast(Exp_With_Pos(IntE(2), p, p)))), p, p),
+    NECons(Exp_With_Pos(IntE(3), p, p),
+    NELast(Exp_With_Pos(IntE(4), p, p)
+  )))), ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("{{1; 2}; 3; 4}")).exp
   // check([WordToken("fn"), OpenParenToken, WordToken("x"), CloseParenToken, ColonToken, IntToken(1)])
   //   tokenize("fn(x): 1")
-  check(FnE(["x"], Exp_With_Pos(IntE(1), Pos(0,6), Pos(0,7))))
+  check(FnE(["x"], Exp_With_Pos(IntE(1), p, p)), ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("fn(x) 1")).exp
   check(FnE(["x"], Exp_With_Pos(BlockE(
-      NECons(Exp_With_Pos(IntE(1), Pos(0,8), Pos(0,9)),
-      NELast(Exp_With_Pos(IntE(2), Pos(0,11), Pos(0,12))))), Pos(0,6), Pos(0,14))))
+        NECons(Exp_With_Pos(IntE(1), p, p),
+        NELast(Exp_With_Pos(IntE(2), p, p)))), p, p)),
+      ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("fn(x) { 1; 2 }")).exp
-  check(FnE(["x"], Exp_With_Pos(IdE("x"), Pos(0,6), Pos(0,7))))
+  check(FnE(["x"], Exp_With_Pos(IdE("x"), p, p)), ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("fn(x) x")).exp
   check(AppE(
-      Exp_With_Pos(IntE(1), Pos(0,0), Pos(0,1)),
-      [Exp_With_Pos(IntE(2), Pos(0,2), Pos(0,3))]))
+        Exp_With_Pos(IntE(1), p, p),
+        [Exp_With_Pos(IntE(2), p, p)]),
+      ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("1(2)")).exp
   check(AppE(
-    Exp_With_Pos(FnE(["x"],
-      Exp_With_Pos(IdE("x"), Pos(0,7), Pos(0,8))), Pos(0,0), Pos(0,9)),
-    [Exp_With_Pos(IntE(1), Pos(0,10), Pos(0,11))]))
+        Exp_With_Pos(FnE(["x"],
+          Exp_With_Pos(IdE("x"), p, p)), p, p),
+        [Exp_With_Pos(IntE(1), p, p)]),
+      ?(==) = exp_eq_excluding_pos)
     parse_exp(tokenize("(fn(x) x)(1)")).exp
   check(IntV(42))
     "(fn(x) x)(42)".run
@@ -238,9 +265,10 @@ fun main()
   check(IntV(42))
     "{ val x = (fn(x) x)(42); x }".run
   check(DefE("recur", ["x"],
-      Exp_With_Pos(AppE(
-        Exp_With_Pos(IdE("recur"), Pos(0,15), Pos(0,20)),
-        [Exp_With_Pos(IdE("x"), Pos(0,21), Pos(0,22))]), Pos(0,15), Pos(0,23))))
+        Exp_With_Pos(AppE(
+          Exp_With_Pos(IdE("recur"), p, p),
+          [Exp_With_Pos(IdE("x"), p, p)]), p, p)),
+      ?(==) = exp_eq_excluding_pos)
     "def recur(x) = recur(x)".tokenize.parse_exp.exp
   check(IntV(42))
     "{ def g(x) = f(x); def f(x) = x; g(42) }".run
