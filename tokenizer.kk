@@ -176,7 +176,7 @@ fun count_lines(s: string): int {
   s.list.filter(fn(c) c == '\n').length
 }
 
-fun tokenize(s: string): <pure,console> list<token_with_pos> {
+fun tokenize(s: string): <pure> list<token_with_pos> {
   var line_number := 0
   var column := 0
   val parser = fn(p: parser<<get_pos>,a>): _ a {

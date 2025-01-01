@@ -172,6 +172,43 @@ fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value
   }
 }
 
+fun create_prelude_env(): <pure, store_update> env {
+  val prelude_statements = [
+    "def true(x, y) = x",
+    "def false(x, y) = y",
+    "def if(cond, then, else) = cond(then, else)()",
+    r"type nat {
+      O()
+    | S(n)
+    }",
+    r"type list {
+      nil()
+    | cons(head, tail)
+    }",
+    r"type tables {
+      A()
+    | B()
+    }", // A = (pk, fk, data), B = (pk, data)
+    r"type predicate {
+      eq(columnIndex, value)
+    }",
+    r"type query {
+      select(query, predicate)
+    | project(query, columnIndices)
+    | cross(a, b)
+    | diff(a, b)
+    | union(a, b)
+    }",
+    r"type context {
+      ctx(A, B)
+    }"
+  ]
+
+  val parsed_prelude_statements = prelude_statements.map(fn(statement) statement.tokenize.parse_exp)
+
+  thread/hash-map().add_block_statements(parsed_prelude_statements)
+} 
+
 fun run(prog: string): <pure, console> toy-value {
   var store := thread/hash-map()
   var last_addr := 0
@@ -184,7 +221,7 @@ fun run(prog: string): <pure, console> toy-value {
       last_addr
     }
   }
-  prog.tokenize.parse_exp.interp(thread/hash-map())
+  prog.tokenize.parse_exp.interp(create_prelude_env())
 }
 
 pub fun test()
@@ -216,10 +253,17 @@ pub fun test()
     }".run
   check(IntV(1))
     r"{
-      type myType
-        pair(fst, snd);
+      type myType {
+        pair(fst, snd)
+      };
       match pair(1, 2) {
         pair(x, y) x
+      }
+    }".run
+  check(IntV(1))
+    r"{
+      match cons(1, nil()) {
+        cons(head, tail) head
       }
     }".run
   
