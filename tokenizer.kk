@@ -20,6 +20,9 @@ value type token {
   AssignmentOperatorToken
   ListSeparatorToken
   OptionSeparatorToken
+  HoleToken
+  PropertyAccessToken
+  EqualityCheckToken
 }
 
 fun token/(==)(a: token, b: token): bool {
@@ -34,6 +37,9 @@ fun token/(==)(a: token, b: token): bool {
     (AssignmentOperatorToken, AssignmentOperatorToken) -> True
     (ListSeparatorToken, ListSeparatorToken) -> True
     (OptionSeparatorToken, OptionSeparatorToken) -> True
+    (HoleToken, HoleToken) -> True
+    (PropertyAccessToken, PropertyAccessToken) -> True
+    (EqualityCheckToken, EqualityCheckToken) -> True
     _ -> False
   }
 }
@@ -50,6 +56,9 @@ fun token/show(tok: token): string {
     AssignmentOperatorToken -> "AssignmentOperatorToken"
     ListSeparatorToken -> "ListSeparatorToken"
     OptionSeparatorToken -> "OptionSeparatorToken"
+    HoleToken -> "HoleToken"
+    PropertyAccessToken -> "PropertyAccessToken"
+    EqualityCheckToken -> "EqualityCheckToken"
   }
 }
 
@@ -125,10 +134,27 @@ fun p_option_separator_token(): <parse> token {
   OptionSeparatorToken
 }
 
+fun p_hole_token(): <parse> token {
+  char('_')
+  HoleToken
+}
+
+fun p_property_access_token(): <parse> token {
+  char('.')
+  PropertyAccessToken
+}
+
+fun p_equality_check_token(): <parse> token {
+  char('=')
+  char('=')
+  EqualityCheckToken
+}
+
 fun p_token(): <parse, get_pos> token_with_pos {
   val start = get_pos()
   val res = TokenWithPos(
     choose([
+      p_equality_check_token,
       p_word_token,
       p_int_token,
       p_open_brace_token,
@@ -139,6 +165,8 @@ fun p_token(): <parse, get_pos> token_with_pos {
       p_assignment_operator_token,
       p_list_separator_token,
       p_option_separator_token,
+      p_hole_token,
+      p_property_access_token,
     ]), start, get_pos())
   many(whitespace)
   res
