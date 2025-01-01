@@ -154,9 +154,6 @@ fun p_list_separator(): ast<token_with_pos> token_with_pos -> p_eq(ListSeparator
 fun p_typedef_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("type")
 fun p_option_separator(): ast<token_with_pos> token_with_pos -> p_eq(OptionSeparatorToken)
 fun p_match_keyword(): ast<token_with_pos> token_with_pos -> p_keyword("match")
-fun p_hole(): ast<token_with_pos> token_with_pos -> p_eq(HoleToken)
-fun p_property_access_operator(): ast<token_with_pos> token_with_pos -> p_eq(PropertyAccessToken)
-fun p_equality_check_operator(): ast<token_with_pos> token_with_pos -> p_eq(EqualityCheckToken)
 
 fun p_param_list(): ast<token_with_pos> list<string> {
   p-sep-by("parameter list", fn() p_word().fst, p_list_separator)
@@ -259,35 +256,6 @@ fun p_match(): <ast<token_with_pos>> exp_with_pos {
   val cases = assert-non-empty(p-sep-by1("cases", p_case, p_option_separator))
   val end = p_close_brace().end
   Exp_With_Pos(MatchE(discriminee, cases), start, end)
-}
-
-value type predicate {
-  EqualityCheckP(lhs_property: string, rhs_property: string)
-}
-
-fun predicate/(==)(a: predicate, b: predicate): bool {
-  match (a, b) {
-    (EqualityCheckP(a_lhs_prop, a_rhs_prop), EqualityCheckP(b_lhs_prop, b_rhs_prop)) ->
-      a_lhs_prop == b_lhs_prop && a_rhs_prop == b_rhs_prop
-  }
-}
-
-fun predicate/show(a: predicate): string {
-  match a {
-    EqualityCheckP(lhs_property, rhs_property) ->
-      "EqualityCheckP(" ++ lhs_property ++ ", " ++ rhs_property ++ ")"
-  }
-}
-
-fun p_predicate(): ast<token_with_pos> predicate {
-  p_hole()
-  p_property_access_operator()
-  val lhs_property = p_word().fst
-  p_equality_check_operator()
-  p_hole()
-  p_property_access_operator()
-  val rhs_property = p_word().fst
-  EqualityCheckP(lhs_property, rhs_property)
 }
 
 fun p_operator(): <ast<token_with_pos>> exp_with_pos {
@@ -429,8 +397,4 @@ pub fun test() {
           [Exp_With_Pos(IdE("x"), p, p)]), p, p)),
       ?(==) = exp_eq_excluding_pos)
     "def recur(x) = recur(x)".tokenize.parse_exp.exp
-  check(EqualityCheckP("pk", "fk"))
-    with final ctl astError(msg)
-      throw(msg)
-    "_.pk == _.fk".tokenize.parseLexemes(p_predicate)
 }
