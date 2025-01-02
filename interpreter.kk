@@ -15,6 +15,7 @@ type toy-value {
   CloV(params: list<string>, body: exp_with_pos, env: env)
   ConstructorV(option_name: string, params: list<string>)
   AlgebraicV(option_name: string, args: list<toy-value>)
+  GetV
 }
 
 fun toy-value/(==)(a: toy-value, b: toy-value): div bool {
@@ -29,6 +30,7 @@ fun toy-value/(==)(a: toy-value, b: toy-value): div bool {
     (AlgebraicV(a_option_name, a_args), AlgebraicV(b_option_name, b_args)) ->
       a_option_name == b_option_name
       && list/(==)(a_args, b_args, ?(==) = fn(a_arg, b_arg) pretend-no-div(fn() a_arg == b_arg))
+    (GetV, GetV) -> True
     _ -> False
   }
 }
@@ -39,6 +41,7 @@ fun toy-value/show(value: toy-value): div string {
     CloV(params, body, _) -> "CloV(" ++ params.show ++ ", " ++ body.show ++ ")"
     ConstructorV(option_name, params) -> "ConstructorV(" ++ option_name ++ ", " ++ params.show ++ ")"
     AlgebraicV(option_name, args) -> "AlgebraicV(" ++ option_name ++ ", " ++ args.show ++ ")"
+    GetV -> "GetV"
   }
 }
 
@@ -110,6 +113,142 @@ fun env/insert_all(env: env, entries: list<(string, addr)>): env {
   entries.foldl(env, fn(acc_env, (key, addr)) acc_env.insert(key, addr))
 }
 
+fun list/at(list: list<a>, i: int): maybe<a> {
+  if (i == 0) then {
+    list.head()
+  } else {
+    match list {
+      Nil -> Nothing
+      Cons(_, tail) -> tail.at(i - 1)
+    }
+  }
+}
+
+fun list/cross(a: list<a>, b: list<b>, joiner: (a, b) -> e c): e list<c> {
+  match a {
+    Nil -> []
+    Cons(a_head, a_tail) -> {
+      b.map(fn(b_elem) -> joiner(a_head, b_elem))
+      ++ a_tail.cross(b, joiner)
+    }
+  }
+}
+
+fun toy_nat_to_int(toy_nat: toy-value) {
+  match toy_nat {
+    AlgebraicV("O", []) -> 0
+    AlgebraicV("S", [n_value]) -> 1 + n_value.toy_nat_to_int
+  }
+}
+
+fun to_toy_nat(n: int) {
+  if (n == 0) then {
+    AlgebraicV("O", [])
+  } else {
+    AlgebraicV("S", [(n - 1).to_toy_nat])
+  }
+}
+
+fun toy_list_to_list(toy_list: toy-value) {
+  match toy_list {
+    AlgebraicV("nil", []) -> []
+    AlgebraicV("cons", [head, tail]) -> Cons(head, tail.toy_list_to_list)
+  }
+}
+
+fun to_toy_list(list: list<toy-value>) {
+  match list {
+    Nil -> AlgebraicV("nil", [])
+    Cons(head, tail) -> AlgebraicV("cons", [head, tail.to_toy_list])
+  }
+}
+
+fun predicate_value(predicate_value_value: toy-value, tuple: toy-value) {
+  match predicate_value_value {
+    AlgebraicV("column", [index_value]) -> {
+      val column_index = index_value.toy_nat_to_int
+      match tuple {
+        AlgebraicV("tuple", args) -> args.at(column_index).get_or_throw()
+      }
+    }
+    AlgebraicV("literal", [value]) -> value
+  }
+}
+
+fun filter_on_predicate(tuples: list<toy-value>, predicate: toy-value) {
+  match predicate {
+    AlgebraicV("eq", [a, b]) -> {
+      tuples.filter(fn(tuple) {
+        val a_value = a.predicate_value(tuple)
+        val b_value = b.predicate_value(tuple)
+        a_value == b_value
+      })
+    }
+  }
+}
+
+fun execute(query: toy-value) {
+  match query {
+    AlgebraicV("table", [AlgebraicV("A", [])]) -> {
+      [
+        AlgebraicV("tuple", [0.to_toy_nat, 0.to_toy_nat, 0.to_toy_nat]),
+        AlgebraicV("tuple", [1.to_toy_nat, 0.to_toy_nat, 2.to_toy_nat]),
+        AlgebraicV("tuple", [2.to_toy_nat, 1.to_toy_nat, 4.to_toy_nat]),
+      ]
+    }
+    AlgebraicV("table", [AlgebraicV("B", [])]) -> {
+      [
+        AlgebraicV("tuple", [0.to_toy_nat, 6.to_toy_nat]),
+        AlgebraicV("tuple", [1.to_toy_nat, 8.to_toy_nat]),
+      ]
+    }
+    AlgebraicV("select", [sub_query, predicate]) -> {
+      sub_query.execute.filter_on_predicate(predicate)
+    }
+    AlgebraicV("project", [sub_query, column_indices_value]) -> {
+      val column_indicies: list<int> = column_indices_value
+        .toy_list_to_list
+        .map(toy_nat_to_int)
+      sub_query.execute.map(fn(tuple_value) {
+        match tuple_value {
+          AlgebraicV("tuple", args) -> {
+            val column_values = column_indicies.map(fn(column_index) {
+              args.at(column_index).get_or_throw()
+            })
+            AlgebraicV("tuple", column_values)
+          }
+        }
+      })
+    }
+    AlgebraicV("cross", [a_query, b_query]) -> {
+      val a_query_tuples = a_query.execute
+      val b_query_tuples = b_query.execute
+      a_query_tuples.cross(b_query_tuples, fn(a_query_tuple, b_query_tuple) {
+        match a_query_tuple {
+          AlgebraicV("tuple", a_args) -> {
+            match b_query_tuple {
+              AlgebraicV("tuple", b_args) ->
+                AlgebraicV("tuple", a_args ++ b_args)
+            }
+          }
+        }
+      })
+    }
+    AlgebraicV("diff", [a_query, b_query]) -> { // unoptimized
+      val a_query_tuples = a_query.execute
+      val b_query_tuples = b_query.execute
+      a_query_tuples.filter(fn(a_query_tuple)
+        !b_query_tuples.any(fn(b_query_tuple) a_query_tuple == b_query_tuple)
+      )
+    }
+    AlgebraicV("union", [a_query, b_query]) -> {
+      val a_query_tuples = a_query.execute
+      val b_query_tuples = b_query.execute
+      a_query_tuples ++ b_query_tuples
+    }
+  }
+}
+
 fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value {
   val exp = exp_with_pos.exp
   val start = exp_with_pos.start
@@ -146,6 +285,13 @@ fun interp(exp_with_pos: exp_with_pos, env: env): <pure, store_update> toy-value
             throw("Unexpected number of arguments. Expected " ++ params.length.show ++ ", but got " ++ operands.length.show)
           }
           AlgebraicV(option_name, operand_values)
+        }
+        GetV -> {
+          if (operand_values.length != 1) then {
+            throw("Unexpected number of arguments. Expected 1, but got " ++ operands.length.show)
+          }
+          val operand_value = assert-non-empty(operand_values).first()
+          operand_value.execute.to_toy_list
         }
         _ -> throw("Cannot apply non-function")
       }
@@ -189,24 +335,29 @@ fun create_prelude_env(): <pure, store_update> env {
       A()
     | B()
     }", // A = (pk, fk, data), B = (pk, data)
+    r"type predicateValue {
+      column(index)
+    | literal(value)
+    }",
     r"type predicate {
-      eq(columnIndex, value)
+      eq(a, b)
     }",
     r"type query {
-      select(query, predicate)
+      table(name)
+    | select(query, predicate)
     | project(query, columnIndices)
     | cross(a, b)
     | diff(a, b)
     | union(a, b)
     }",
-    r"type context {
-      ctx(A, B)
-    }"
   ]
 
   val parsed_prelude_statements = prelude_statements.map(fn(statement) statement.tokenize.parse_exp)
 
-  thread/hash-map().add_block_statements(parsed_prelude_statements)
+
+  thread/hash-map()
+    .insert_all([("get", GetV)]) // atomic functions
+    .add_block_statements(parsed_prelude_statements)
 } 
 
 fun run(prog: string): <pure, console> toy-value {
@@ -265,5 +416,94 @@ pub fun test()
       match cons(1, nil()) {
         cons(head, tail) head
       }
+    }".run
+  check([
+        AlgebraicV("tuple", [0.to_toy_nat, 0.to_toy_nat, 0.to_toy_nat]),
+        AlgebraicV("tuple", [1.to_toy_nat, 0.to_toy_nat, 2.to_toy_nat]),
+        AlgebraicV("tuple", [2.to_toy_nat, 1.to_toy_nat, 4.to_toy_nat]),
+      ].to_toy_list)
+    r"{
+      get(table(A()))
+    }".run
+  check([
+        AlgebraicV("tuple", [0.to_toy_nat, 6.to_toy_nat]),
+        AlgebraicV("tuple", [1.to_toy_nat, 8.to_toy_nat]),
+      ].to_toy_list)
+    r"{
+      get(table(B()))
+    }".run
+  check([
+        AlgebraicV("tuple", [0.to_toy_nat, 0.to_toy_nat, 0.to_toy_nat]),
+      ].to_toy_list)
+    r"{
+      get(select(table(A()), eq(column(O()), literal(O()))))
+    }".run
+  check([
+        AlgebraicV("tuple", [0.to_toy_nat]),
+        AlgebraicV("tuple", [2.to_toy_nat]),
+        AlgebraicV("tuple", [4.to_toy_nat]),
+      ].to_toy_list)
+    r"{
+      get(project(table(A()), cons(S(S(O())), nil())))
+    }".run
+  check([
+        AlgebraicV("tuple", [0.to_toy_nat, 0.to_toy_nat, 0.to_toy_nat, 0.to_toy_nat, 6.to_toy_nat]),
+        AlgebraicV("tuple", [0.to_toy_nat, 0.to_toy_nat, 0.to_toy_nat, 1.to_toy_nat, 8.to_toy_nat]),
+        AlgebraicV("tuple", [1.to_toy_nat, 0.to_toy_nat, 2.to_toy_nat, 0.to_toy_nat, 6.to_toy_nat]),
+        AlgebraicV("tuple", [1.to_toy_nat, 0.to_toy_nat, 2.to_toy_nat, 1.to_toy_nat, 8.to_toy_nat]),
+        AlgebraicV("tuple", [2.to_toy_nat, 1.to_toy_nat, 4.to_toy_nat, 0.to_toy_nat, 6.to_toy_nat]),
+        AlgebraicV("tuple", [2.to_toy_nat, 1.to_toy_nat, 4.to_toy_nat, 1.to_toy_nat, 8.to_toy_nat]),
+      ].to_toy_list)
+    r"{
+      get(cross(table(A()), table(B())))
+    }".run
+  check([
+        AlgebraicV("tuple", [1.to_toy_nat, 0.to_toy_nat, 2.to_toy_nat]),
+        AlgebraicV("tuple", [2.to_toy_nat, 1.to_toy_nat, 4.to_toy_nat]),
+      ].to_toy_list)
+    r"{
+      val first = select(table(A()), eq(column(O()), literal(O())));
+      get(diff(table(A()), first))
+    }".run
+  check([
+        AlgebraicV("tuple", [1.to_toy_nat, 0.to_toy_nat, 2.to_toy_nat]),
+        AlgebraicV("tuple", [2.to_toy_nat, 1.to_toy_nat, 4.to_toy_nat]),
+      ].to_toy_list)
+    r"{
+      val second = select(table(A()), eq(column(O()), literal(S(O()))));
+      val third = select(table(A()), eq(column(O()), literal(S(S(O())))));
+      get(union(second, third))
+    }".run
+  check([
+        AlgebraicV("tuple", [0.to_toy_nat, 0.to_toy_nat, 0.to_toy_nat, 0.to_toy_nat, 6.to_toy_nat]),
+        AlgebraicV("tuple", [1.to_toy_nat, 0.to_toy_nat, 2.to_toy_nat, 0.to_toy_nat, 6.to_toy_nat]),
+        AlgebraicV("tuple", [2.to_toy_nat, 1.to_toy_nat, 4.to_toy_nat, 1.to_toy_nat, 8.to_toy_nat]),
+      ].to_toy_list)
+    r"{
+      def join(a, b, pred) = {
+        select(cross(a, b), pred)
+      };
+      get(join(table(A()), table(B()), eq(column(S(O())), column(S(S(S(O())))))))
+    }".run
+  // not quite right since we're not doing uniques
+  check([
+    AlgebraicV("tuple", [1.to_toy_nat, 0.to_toy_nat, 2.to_toy_nat]),
+    AlgebraicV("tuple", [1.to_toy_nat, 0.to_toy_nat, 2.to_toy_nat]),
+  ].to_toy_list)
+    r"{
+      def intersection(a, b) = {
+        val left = diff(a, b);
+        val right = diff(b, a);
+        val xor = union(left, right);
+        val all = union(a, b);
+        diff(all, xor)
+      };
+      val first = select(table(A()), eq(column(O()), literal(O())));
+      val second = select(table(A()), eq(column(O()), literal(S(O()))));
+      val third = select(table(A()), eq(column(O()), literal(S(S(O())))));
+      val firstAndSecond = union(first, second);
+      val secondAndThird = union(second, third);
+
+      get(intersection(firstAndSecond, secondAndThird))
     }".run
   
